@@ -1,0 +1,13 @@
+{"time":"2026-02-22T12:08:10.16368274-05:00","level":"INFO","msg":"stream: starting","core version":"0.24.2"}
+{"time":"2026-02-22T12:08:10.278333389-05:00","level":"WARN","msg":"featurechecker: GraphQL client is nil, skipping feature loading"}
+{"time":"2026-02-22T12:08:10.278390777-05:00","level":"INFO","msg":"stream: created new stream","id":"ml4nukqa"}
+{"time":"2026-02-22T12:08:10.278434139-05:00","level":"INFO","msg":"handler: started","stream_id":"ml4nukqa"}
+{"time":"2026-02-22T12:08:10.278988454-05:00","level":"INFO","msg":"stream: started","id":"ml4nukqa"}
+{"time":"2026-02-22T12:08:10.279014463-05:00","level":"INFO","msg":"writer: started","stream_id":"ml4nukqa"}
+{"time":"2026-02-22T12:08:10.279019523-05:00","level":"INFO","msg":"sender: started","stream_id":"ml4nukqa"}
+{"time":"2026-02-22T12:08:10.279595188-05:00","level":"WARN","msg":"runupserter: server does not expand metric globs but the x_server_side_expand_glob_metrics setting is set; ignoring"}
+{"time":"2026-02-22T12:28:47.079034845-05:00","level":"INFO","msg":"handler: operation stats","stats":{}}
+{"time":"2026-02-22T12:28:47.082780599-05:00","level":"INFO","msg":"stream: closing","id":"ml4nukqa"}
+{"time":"2026-02-22T12:28:47.082795437-05:00","level":"INFO","msg":"handler: closed","stream_id":"ml4nukqa"}
+{"time":"2026-02-22T12:28:47.083245285-05:00","level":"INFO","msg":"sender: closed","stream_id":"ml4nukqa"}
+{"time":"2026-02-22T12:28:47.083260594-05:00","level":"INFO","msg":"stream: closed","id":"ml4nukqa"}

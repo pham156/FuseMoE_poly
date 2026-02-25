@@ -1,0 +1,1165 @@
+Wed Feb  4 14:52:09 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 575.57.08              Driver Version: 575.57.08      CUDA Version: 12.9     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla V100-PCIE-16GB           On  |   00000000:3B:00.0 Off |                  Off |
+| N/A   30C    P0             22W /  250W |       0MiB /  16384MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Running sim_plots.py with test_rs=1 and test_noise=0.01
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1176
+Epoch 20/100, Loss: 0.0926
+Epoch 30/100, Loss: 0.0765
+Epoch 40/100, Loss: 0.0721
+Epoch 50/100, Loss: 0.0646
+Epoch 60/100, Loss: 0.0585
+Epoch 70/100, Loss: 0.0550
+Epoch 80/100, Loss: 0.0485
+Epoch 90/100, Loss: 0.0523
+Epoch 100/100, Loss: 0.0489
+One-Level MoE Test MSE: 0.0279
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0707
+Epoch 20/100, Loss: 0.0399
+Epoch 30/100, Loss: 0.0471
+Epoch 40/100, Loss: 0.0300
+Epoch 50/100, Loss: 0.0344
+Epoch 60/100, Loss: 0.0256
+Epoch 70/100, Loss: 0.0271
+Epoch 80/100, Loss: 0.0249
+Epoch 90/100, Loss: 0.0241
+Epoch 100/100, Loss: 0.0274
+Two-Level HME Test MSE: 0.0196
+Running sim_plots.py with test_rs=1 and test_noise=0.02
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1015
+Epoch 20/100, Loss: 0.0697
+Epoch 30/100, Loss: 0.0525
+Epoch 40/100, Loss: 0.0395
+Epoch 50/100, Loss: 0.0341
+Epoch 60/100, Loss: 0.0316
+Epoch 70/100, Loss: 0.0289
+Epoch 80/100, Loss: 0.0269
+Epoch 90/100, Loss: 0.0262
+Epoch 100/100, Loss: 0.0250
+One-Level MoE Test MSE: 0.0131
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0584
+Epoch 20/100, Loss: 0.0419
+Epoch 30/100, Loss: 0.0390
+Epoch 40/100, Loss: 0.0328
+Epoch 50/100, Loss: 0.0291
+Epoch 60/100, Loss: 0.0268
+Epoch 70/100, Loss: 0.0238
+Epoch 80/100, Loss: 0.0257
+Epoch 90/100, Loss: 0.0230
+Epoch 100/100, Loss: 0.0275
+Two-Level HME Test MSE: 0.0136
+Running sim_plots.py with test_rs=1 and test_noise=0.03
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1035
+Epoch 20/100, Loss: 0.0771
+Epoch 30/100, Loss: 0.0674
+Epoch 40/100, Loss: 0.0660
+Epoch 50/100, Loss: 0.0607
+Epoch 60/100, Loss: 0.0583
+Epoch 70/100, Loss: 0.0567
+Epoch 80/100, Loss: 0.0546
+Epoch 90/100, Loss: 0.0524
+Epoch 100/100, Loss: 0.0534
+One-Level MoE Test MSE: 0.0405
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0606
+Epoch 20/100, Loss: 0.0462
+Epoch 30/100, Loss: 0.0394
+Epoch 40/100, Loss: 0.0338
+Epoch 50/100, Loss: 0.0296
+Epoch 60/100, Loss: 0.0285
+Epoch 70/100, Loss: 0.0278
+Epoch 80/100, Loss: 0.0262
+Epoch 90/100, Loss: 0.0259
+Epoch 100/100, Loss: 0.0246
+Two-Level HME Test MSE: 0.0140
+Running sim_plots.py with test_rs=1 and test_noise=0.04
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0806
+Epoch 20/100, Loss: 0.0648
+Epoch 30/100, Loss: 0.0451
+Epoch 40/100, Loss: 0.0393
+Epoch 50/100, Loss: 0.0377
+Epoch 60/100, Loss: 0.0343
+Epoch 70/100, Loss: 0.0317
+Epoch 80/100, Loss: 0.0294
+Epoch 90/100, Loss: 0.0294
+Epoch 100/100, Loss: 0.0270
+One-Level MoE Test MSE: 0.0151
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1010
+Epoch 20/100, Loss: 0.0605
+Epoch 30/100, Loss: 0.0451
+Epoch 40/100, Loss: 0.0421
+Epoch 50/100, Loss: 0.0394
+Epoch 60/100, Loss: 0.0368
+Epoch 70/100, Loss: 0.0315
+Epoch 80/100, Loss: 0.0293
+Epoch 90/100, Loss: 0.0321
+Epoch 100/100, Loss: 0.0315
+Two-Level HME Test MSE: 0.0224
+Running sim_plots.py with test_rs=1 and test_noise=0.05
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1083
+Epoch 20/100, Loss: 0.0777
+Epoch 30/100, Loss: 0.0503
+Epoch 40/100, Loss: 0.0380
+Epoch 50/100, Loss: 0.0315
+Epoch 60/100, Loss: 0.0345
+Epoch 70/100, Loss: 0.0264
+Epoch 80/100, Loss: 0.0294
+Epoch 90/100, Loss: 0.0246
+Epoch 100/100, Loss: 0.0252
+One-Level MoE Test MSE: 0.0143
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1057
+Epoch 20/100, Loss: 0.0711
+Epoch 30/100, Loss: 0.0633
+Epoch 40/100, Loss: 0.0594
+Epoch 50/100, Loss: 0.0535
+Epoch 60/100, Loss: 0.0497
+Epoch 70/100, Loss: 0.0482
+Epoch 80/100, Loss: 0.0508
+Epoch 90/100, Loss: 0.0441
+Epoch 100/100, Loss: 0.0396
+Two-Level HME Test MSE: 0.0306
+Running sim_plots.py with test_rs=1 and test_noise=0.06
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0998
+Epoch 20/100, Loss: 0.0728
+Epoch 30/100, Loss: 0.0653
+Epoch 40/100, Loss: 0.0649
+Epoch 50/100, Loss: 0.0522
+Epoch 60/100, Loss: 0.0411
+Epoch 70/100, Loss: 0.0357
+Epoch 80/100, Loss: 0.0332
+Epoch 90/100, Loss: 0.0270
+Epoch 100/100, Loss: 0.0263
+One-Level MoE Test MSE: 0.0182
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0922
+Epoch 20/100, Loss: 0.0607
+Epoch 30/100, Loss: 0.0378
+Epoch 40/100, Loss: 0.0330
+Epoch 50/100, Loss: 0.0313
+Epoch 60/100, Loss: 0.0276
+Epoch 70/100, Loss: 0.0334
+Epoch 80/100, Loss: 0.0282
+Epoch 90/100, Loss: 0.0282
+Epoch 100/100, Loss: 0.0250
+Two-Level HME Test MSE: 0.0144
+Running sim_plots.py with test_rs=1 and test_noise=0.07
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0971
+Epoch 20/100, Loss: 0.0799
+Epoch 30/100, Loss: 0.0705
+Epoch 40/100, Loss: 0.0688
+Epoch 50/100, Loss: 0.0659
+Epoch 60/100, Loss: 0.0655
+Epoch 70/100, Loss: 0.0638
+Epoch 80/100, Loss: 0.0599
+Epoch 90/100, Loss: 0.0586
+Epoch 100/100, Loss: 0.0575
+One-Level MoE Test MSE: 0.0512
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0599
+Epoch 20/100, Loss: 0.0424
+Epoch 30/100, Loss: 0.0388
+Epoch 40/100, Loss: 0.0302
+Epoch 50/100, Loss: 0.0308
+Epoch 60/100, Loss: 0.0269
+Epoch 70/100, Loss: 0.0252
+Epoch 80/100, Loss: 0.0234
+Epoch 90/100, Loss: 0.0240
+Epoch 100/100, Loss: 0.0238
+Two-Level HME Test MSE: 0.0357
+Running sim_plots.py with test_rs=1 and test_noise=0.08
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0763
+Epoch 20/100, Loss: 0.0556
+Epoch 30/100, Loss: 0.0466
+Epoch 40/100, Loss: 0.0411
+Epoch 50/100, Loss: 0.0350
+Epoch 60/100, Loss: 0.0335
+Epoch 70/100, Loss: 0.0311
+Epoch 80/100, Loss: 0.0299
+Epoch 90/100, Loss: 0.0283
+Epoch 100/100, Loss: 0.0264
+One-Level MoE Test MSE: 0.0197
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0780
+Epoch 20/100, Loss: 0.0601
+Epoch 30/100, Loss: 0.0398
+Epoch 40/100, Loss: 0.0389
+Epoch 50/100, Loss: 0.0358
+Epoch 60/100, Loss: 0.0319
+Epoch 70/100, Loss: 0.0275
+Epoch 80/100, Loss: 0.0274
+Epoch 90/100, Loss: 0.0294
+Epoch 100/100, Loss: 0.0257
+Two-Level HME Test MSE: 0.0188
+Running sim_plots.py with test_rs=1 and test_noise=0.09
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1287
+Epoch 20/100, Loss: 0.0699
+Epoch 30/100, Loss: 0.0470
+Epoch 40/100, Loss: 0.0401
+Epoch 50/100, Loss: 0.0341
+Epoch 60/100, Loss: 0.0354
+Epoch 70/100, Loss: 0.0313
+Epoch 80/100, Loss: 0.0285
+Epoch 90/100, Loss: 0.0272
+Epoch 100/100, Loss: 0.0256
+One-Level MoE Test MSE: 0.0215
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0940
+Epoch 20/100, Loss: 0.0540
+Epoch 30/100, Loss: 0.0440
+Epoch 40/100, Loss: 0.0396
+Epoch 50/100, Loss: 0.0342
+Epoch 60/100, Loss: 0.0294
+Epoch 70/100, Loss: 0.0298
+Epoch 80/100, Loss: 0.0267
+Epoch 90/100, Loss: 0.0258
+Epoch 100/100, Loss: 0.0342
+Two-Level HME Test MSE: 0.0229
+Running sim_plots.py with test_rs=1 and test_noise=0.1
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0765
+Epoch 20/100, Loss: 0.0479
+Epoch 30/100, Loss: 0.0433
+Epoch 40/100, Loss: 0.0375
+Epoch 50/100, Loss: 0.0355
+Epoch 60/100, Loss: 0.0357
+Epoch 70/100, Loss: 0.0350
+Epoch 80/100, Loss: 0.0335
+Epoch 90/100, Loss: 0.0348
+Epoch 100/100, Loss: 0.0284
+One-Level MoE Test MSE: 0.0240
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0788
+Epoch 20/100, Loss: 0.0491
+Epoch 30/100, Loss: 0.0421
+Epoch 40/100, Loss: 0.0354
+Epoch 50/100, Loss: 0.0366
+Epoch 60/100, Loss: 0.0297
+Epoch 70/100, Loss: 0.0288
+Epoch 80/100, Loss: 0.0283
+Epoch 90/100, Loss: 0.0256
+Epoch 100/100, Loss: 0.0294
+Two-Level HME Test MSE: 0.0246
+Running sim_plots.py with test_rs=1 and test_noise=0.11
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0943
+Epoch 20/100, Loss: 0.0568
+Epoch 30/100, Loss: 0.0467
+Epoch 40/100, Loss: 0.0384
+Epoch 50/100, Loss: 0.0369
+Epoch 60/100, Loss: 0.0321
+Epoch 70/100, Loss: 0.0320
+Epoch 80/100, Loss: 0.0284
+Epoch 90/100, Loss: 0.0303
+Epoch 100/100, Loss: 0.0274
+One-Level MoE Test MSE: 0.0305
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0853
+Epoch 20/100, Loss: 0.0568
+Epoch 30/100, Loss: 0.0376
+Epoch 40/100, Loss: 0.0366
+Epoch 50/100, Loss: 0.0291
+Epoch 60/100, Loss: 0.0277
+Epoch 70/100, Loss: 0.0302
+Epoch 80/100, Loss: 0.0226
+Epoch 90/100, Loss: 0.0264
+Epoch 100/100, Loss: 0.0268
+Two-Level HME Test MSE: 0.0255
+Running sim_plots.py with test_rs=1 and test_noise=0.12
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0919
+Epoch 20/100, Loss: 0.0528
+Epoch 30/100, Loss: 0.0426
+Epoch 40/100, Loss: 0.0413
+Epoch 50/100, Loss: 0.0337
+Epoch 60/100, Loss: 0.0323
+Epoch 70/100, Loss: 0.0303
+Epoch 80/100, Loss: 0.0279
+Epoch 90/100, Loss: 0.0262
+Epoch 100/100, Loss: 0.0256
+One-Level MoE Test MSE: 0.0281
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0798
+Epoch 20/100, Loss: 0.0455
+Epoch 30/100, Loss: 0.0383
+Epoch 40/100, Loss: 0.0319
+Epoch 50/100, Loss: 0.0349
+Epoch 60/100, Loss: 0.0310
+Epoch 70/100, Loss: 0.0279
+Epoch 80/100, Loss: 0.0281
+Epoch 90/100, Loss: 0.0250
+Epoch 100/100, Loss: 0.0240
+Two-Level HME Test MSE: 0.0258
+Running sim_plots.py with test_rs=1 and test_noise=0.13
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0957
+Epoch 20/100, Loss: 0.0794
+Epoch 30/100, Loss: 0.0682
+Epoch 40/100, Loss: 0.0645
+Epoch 50/100, Loss: 0.0607
+Epoch 60/100, Loss: 0.0622
+Epoch 70/100, Loss: 0.0602
+Epoch 80/100, Loss: 0.0574
+Epoch 90/100, Loss: 0.0612
+Epoch 100/100, Loss: 0.0377
+One-Level MoE Test MSE: 0.0340
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0811
+Epoch 20/100, Loss: 0.0635
+Epoch 30/100, Loss: 0.0568
+Epoch 40/100, Loss: 0.0356
+Epoch 50/100, Loss: 0.0348
+Epoch 60/100, Loss: 0.0314
+Epoch 70/100, Loss: 0.0309
+Epoch 80/100, Loss: 0.0262
+Epoch 90/100, Loss: 0.0279
+Epoch 100/100, Loss: 0.0255
+Two-Level HME Test MSE: 0.0299
+Running sim_plots.py with test_rs=1 and test_noise=0.14
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1528
+Epoch 20/100, Loss: 0.0937
+Epoch 30/100, Loss: 0.0701
+Epoch 40/100, Loss: 0.0686
+Epoch 50/100, Loss: 0.0664
+Epoch 60/100, Loss: 0.0625
+Epoch 70/100, Loss: 0.0463
+Epoch 80/100, Loss: 0.0380
+Epoch 90/100, Loss: 0.0350
+Epoch 100/100, Loss: 0.0359
+One-Level MoE Test MSE: 0.0405
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0995
+Epoch 20/100, Loss: 0.0564
+Epoch 30/100, Loss: 0.0392
+Epoch 40/100, Loss: 0.0338
+Epoch 50/100, Loss: 0.0300
+Epoch 60/100, Loss: 0.0327
+Epoch 70/100, Loss: 0.0295
+Epoch 80/100, Loss: 0.0325
+Epoch 90/100, Loss: 0.0253
+Epoch 100/100, Loss: 0.0243
+Two-Level HME Test MSE: 0.0356
+Running sim_plots.py with test_rs=1 and test_noise=0.15
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1056
+Epoch 20/100, Loss: 0.0539
+Epoch 30/100, Loss: 0.0426
+Epoch 40/100, Loss: 0.0353
+Epoch 50/100, Loss: 0.0341
+Epoch 60/100, Loss: 0.0298
+Epoch 70/100, Loss: 0.0290
+Epoch 80/100, Loss: 0.0324
+Epoch 90/100, Loss: 0.0278
+Epoch 100/100, Loss: 0.0293
+One-Level MoE Test MSE: 0.0393
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1027
+Epoch 20/100, Loss: 0.0603
+Epoch 30/100, Loss: 0.0452
+Epoch 40/100, Loss: 0.0413
+Epoch 50/100, Loss: 0.0327
+Epoch 60/100, Loss: 0.0290
+Epoch 70/100, Loss: 0.0281
+Epoch 80/100, Loss: 0.0253
+Epoch 90/100, Loss: 0.0279
+Epoch 100/100, Loss: 0.0240
+Two-Level HME Test MSE: 0.0327
+Running sim_plots.py with test_rs=1 and test_noise=0.2
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0830
+Epoch 20/100, Loss: 0.0438
+Epoch 30/100, Loss: 0.0400
+Epoch 40/100, Loss: 0.0387
+Epoch 50/100, Loss: 0.0345
+Epoch 60/100, Loss: 0.0359
+Epoch 70/100, Loss: 0.0310
+Epoch 80/100, Loss: 0.0363
+Epoch 90/100, Loss: 0.0296
+Epoch 100/100, Loss: 0.0281
+One-Level MoE Test MSE: 0.0498
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0834
+Epoch 20/100, Loss: 0.0656
+Epoch 30/100, Loss: 0.0445
+Epoch 40/100, Loss: 0.0451
+Epoch 50/100, Loss: 0.0348
+Epoch 60/100, Loss: 0.0346
+Epoch 70/100, Loss: 0.0319
+Epoch 80/100, Loss: 0.0292
+Epoch 90/100, Loss: 0.0289
+Epoch 100/100, Loss: 0.0299
+Two-Level HME Test MSE: 0.0536
+Running sim_plots.py with test_rs=1 and test_noise=0.25
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1081
+Epoch 20/100, Loss: 0.0748
+Epoch 30/100, Loss: 0.0665
+Epoch 40/100, Loss: 0.0534
+Epoch 50/100, Loss: 0.0472
+Epoch 60/100, Loss: 0.0414
+Epoch 70/100, Loss: 0.0370
+Epoch 80/100, Loss: 0.0359
+Epoch 90/100, Loss: 0.0318
+Epoch 100/100, Loss: 0.0327
+One-Level MoE Test MSE: 0.0748
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0754
+Epoch 20/100, Loss: 0.0457
+Epoch 30/100, Loss: 0.0360
+Epoch 40/100, Loss: 0.0357
+Epoch 50/100, Loss: 0.0330
+Epoch 60/100, Loss: 0.0303
+Epoch 70/100, Loss: 0.0317
+Epoch 80/100, Loss: 0.0298
+Epoch 90/100, Loss: 0.0327
+Epoch 100/100, Loss: 0.0265
+Two-Level HME Test MSE: 0.0709
+Running sim_plots.py with test_rs=1 and test_noise=0.3
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1074
+Epoch 20/100, Loss: 0.0735
+Epoch 30/100, Loss: 0.0468
+Epoch 40/100, Loss: 0.0402
+Epoch 50/100, Loss: 0.0384
+Epoch 60/100, Loss: 0.0420
+Epoch 70/100, Loss: 0.0295
+Epoch 80/100, Loss: 0.0286
+Epoch 90/100, Loss: 0.0280
+Epoch 100/100, Loss: 0.0300
+One-Level MoE Test MSE: 0.0974
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0788
+Epoch 20/100, Loss: 0.0612
+Epoch 30/100, Loss: 0.0382
+Epoch 40/100, Loss: 0.0362
+Epoch 50/100, Loss: 0.0307
+Epoch 60/100, Loss: 0.0304
+Epoch 70/100, Loss: 0.0336
+Epoch 80/100, Loss: 0.0243
+Epoch 90/100, Loss: 0.0249
+Epoch 100/100, Loss: 0.0254
+Two-Level HME Test MSE: 0.0906
+Running sim_plots.py with test_rs=2 and test_noise=0.01
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0954
+Epoch 20/100, Loss: 0.0719
+Epoch 30/100, Loss: 0.0598
+Epoch 40/100, Loss: 0.0516
+Epoch 50/100, Loss: 0.0478
+Epoch 60/100, Loss: 0.0389
+Epoch 70/100, Loss: 0.0366
+Epoch 80/100, Loss: 0.0379
+Epoch 90/100, Loss: 0.0296
+Epoch 100/100, Loss: 0.0289
+One-Level MoE Test MSE: 0.0185
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0851
+Epoch 20/100, Loss: 0.0761
+Epoch 30/100, Loss: 0.0705
+Epoch 40/100, Loss: 0.0656
+Epoch 50/100, Loss: 0.0605
+Epoch 60/100, Loss: 0.0626
+Epoch 70/100, Loss: 0.0543
+Epoch 80/100, Loss: 0.0509
+Epoch 90/100, Loss: 0.0402
+Epoch 100/100, Loss: 0.0268
+Two-Level HME Test MSE: 0.0222
+Running sim_plots.py with test_rs=2 and test_noise=0.02
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1423
+Epoch 20/100, Loss: 0.0563
+Epoch 30/100, Loss: 0.0409
+Epoch 40/100, Loss: 0.0359
+Epoch 50/100, Loss: 0.0316
+Epoch 60/100, Loss: 0.0309
+Epoch 70/100, Loss: 0.0297
+Epoch 80/100, Loss: 0.0327
+Epoch 90/100, Loss: 0.0279
+Epoch 100/100, Loss: 0.0283
+One-Level MoE Test MSE: 0.0211
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0850
+Epoch 20/100, Loss: 0.0488
+Epoch 30/100, Loss: 0.0406
+Epoch 40/100, Loss: 0.0394
+Epoch 50/100, Loss: 0.0388
+Epoch 60/100, Loss: 0.0346
+Epoch 70/100, Loss: 0.0332
+Epoch 80/100, Loss: 0.0352
+Epoch 90/100, Loss: 0.0326
+Epoch 100/100, Loss: 0.0340
+Two-Level HME Test MSE: 0.0231
+Running sim_plots.py with test_rs=2 and test_noise=0.03
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0910
+Epoch 20/100, Loss: 0.0522
+Epoch 30/100, Loss: 0.0419
+Epoch 40/100, Loss: 0.0381
+Epoch 50/100, Loss: 0.0338
+Epoch 60/100, Loss: 0.0314
+Epoch 70/100, Loss: 0.0275
+Epoch 80/100, Loss: 0.0264
+Epoch 90/100, Loss: 0.0291
+Epoch 100/100, Loss: 0.0237
+One-Level MoE Test MSE: 0.0180
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0778
+Epoch 20/100, Loss: 0.0448
+Epoch 30/100, Loss: 0.0364
+Epoch 40/100, Loss: 0.0293
+Epoch 50/100, Loss: 0.0272
+Epoch 60/100, Loss: 0.0247
+Epoch 70/100, Loss: 0.0225
+Epoch 80/100, Loss: 0.0265
+Epoch 90/100, Loss: 0.0224
+Epoch 100/100, Loss: 0.0205
+Two-Level HME Test MSE: 0.0158
+Running sim_plots.py with test_rs=2 and test_noise=0.04
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1120
+Epoch 20/100, Loss: 0.0733
+Epoch 30/100, Loss: 0.0609
+Epoch 40/100, Loss: 0.0487
+Epoch 50/100, Loss: 0.0418
+Epoch 60/100, Loss: 0.0368
+Epoch 70/100, Loss: 0.0324
+Epoch 80/100, Loss: 0.0306
+Epoch 90/100, Loss: 0.0294
+Epoch 100/100, Loss: 0.0262
+One-Level MoE Test MSE: 0.0351
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0597
+Epoch 20/100, Loss: 0.0460
+Epoch 30/100, Loss: 0.0407
+Epoch 40/100, Loss: 0.0346
+Epoch 50/100, Loss: 0.0338
+Epoch 60/100, Loss: 0.0299
+Epoch 70/100, Loss: 0.0305
+Epoch 80/100, Loss: 0.0275
+Epoch 90/100, Loss: 0.0261
+Epoch 100/100, Loss: 0.0266
+Two-Level HME Test MSE: 0.0208
+Running sim_plots.py with test_rs=2 and test_noise=0.05
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0845
+Epoch 20/100, Loss: 0.0612
+Epoch 30/100, Loss: 0.0476
+Epoch 40/100, Loss: 0.0367
+Epoch 50/100, Loss: 0.0305
+Epoch 60/100, Loss: 0.0294
+Epoch 70/100, Loss: 0.0278
+Epoch 80/100, Loss: 0.0335
+Epoch 90/100, Loss: 0.0301
+Epoch 100/100, Loss: 0.0244
+One-Level MoE Test MSE: 0.0235
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1455
+Epoch 20/100, Loss: 0.0798
+Epoch 30/100, Loss: 0.0542
+Epoch 40/100, Loss: 0.0472
+Epoch 50/100, Loss: 0.0414
+Epoch 60/100, Loss: 0.0449
+Epoch 70/100, Loss: 0.0366
+Epoch 80/100, Loss: 0.0390
+Epoch 90/100, Loss: 0.0328
+Epoch 100/100, Loss: 0.0337
+Two-Level HME Test MSE: 0.0281
+Running sim_plots.py with test_rs=2 and test_noise=0.06
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1378
+Epoch 20/100, Loss: 0.0822
+Epoch 30/100, Loss: 0.0761
+Epoch 40/100, Loss: 0.0586
+Epoch 50/100, Loss: 0.0416
+Epoch 60/100, Loss: 0.0376
+Epoch 70/100, Loss: 0.0325
+Epoch 80/100, Loss: 0.0374
+Epoch 90/100, Loss: 0.0318
+Epoch 100/100, Loss: 0.0326
+One-Level MoE Test MSE: 0.0331
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0774
+Epoch 20/100, Loss: 0.0699
+Epoch 30/100, Loss: 0.0497
+Epoch 40/100, Loss: 0.0505
+Epoch 50/100, Loss: 0.0440
+Epoch 60/100, Loss: 0.0439
+Epoch 70/100, Loss: 0.0358
+Epoch 80/100, Loss: 0.0343
+Epoch 90/100, Loss: 0.0321
+Epoch 100/100, Loss: 0.0288
+Two-Level HME Test MSE: 0.0242
+Running sim_plots.py with test_rs=2 and test_noise=0.07
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1000
+Epoch 20/100, Loss: 0.0750
+Epoch 30/100, Loss: 0.0691
+Epoch 40/100, Loss: 0.0584
+Epoch 50/100, Loss: 0.0583
+Epoch 60/100, Loss: 0.0369
+Epoch 70/100, Loss: 0.0306
+Epoch 80/100, Loss: 0.0309
+Epoch 90/100, Loss: 0.0317
+Epoch 100/100, Loss: 0.0273
+One-Level MoE Test MSE: 0.0256
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0706
+Epoch 20/100, Loss: 0.0569
+Epoch 30/100, Loss: 0.0449
+Epoch 40/100, Loss: 0.0404
+Epoch 50/100, Loss: 0.0372
+Epoch 60/100, Loss: 0.0362
+Epoch 70/100, Loss: 0.0362
+Epoch 80/100, Loss: 0.0329
+Epoch 90/100, Loss: 0.0294
+Epoch 100/100, Loss: 0.0279
+Two-Level HME Test MSE: 0.0270
+Running sim_plots.py with test_rs=2 and test_noise=0.08
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0878
+Epoch 20/100, Loss: 0.0461
+Epoch 30/100, Loss: 0.0412
+Epoch 40/100, Loss: 0.0363
+Epoch 50/100, Loss: 0.0336
+Epoch 60/100, Loss: 0.0303
+Epoch 70/100, Loss: 0.0320
+Epoch 80/100, Loss: 0.0307
+Epoch 90/100, Loss: 0.0279
+Epoch 100/100, Loss: 0.0253
+One-Level MoE Test MSE: 0.0256
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0646
+Epoch 20/100, Loss: 0.0407
+Epoch 30/100, Loss: 0.0371
+Epoch 40/100, Loss: 0.0308
+Epoch 50/100, Loss: 0.0260
+Epoch 60/100, Loss: 0.0306
+Epoch 70/100, Loss: 0.0278
+Epoch 80/100, Loss: 0.0418
+Epoch 90/100, Loss: 0.0318
+Epoch 100/100, Loss: 0.0272
+Two-Level HME Test MSE: 0.0253
+Running sim_plots.py with test_rs=2 and test_noise=0.09
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1122
+Epoch 20/100, Loss: 0.0789
+Epoch 30/100, Loss: 0.0706
+Epoch 40/100, Loss: 0.0622
+Epoch 50/100, Loss: 0.0392
+Epoch 60/100, Loss: 0.0316
+Epoch 70/100, Loss: 0.0311
+Epoch 80/100, Loss: 0.0294
+Epoch 90/100, Loss: 0.0255
+Epoch 100/100, Loss: 0.0271
+One-Level MoE Test MSE: 0.0469
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0789
+Epoch 20/100, Loss: 0.0728
+Epoch 30/100, Loss: 0.0681
+Epoch 40/100, Loss: 0.0541
+Epoch 50/100, Loss: 0.0585
+Epoch 60/100, Loss: 0.0417
+Epoch 70/100, Loss: 0.0431
+Epoch 80/100, Loss: 0.0369
+Epoch 90/100, Loss: 0.0372
+Epoch 100/100, Loss: 0.0395
+Two-Level HME Test MSE: 0.0387
+Running sim_plots.py with test_rs=2 and test_noise=0.1
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1355
+Epoch 20/100, Loss: 0.0738
+Epoch 30/100, Loss: 0.0574
+Epoch 40/100, Loss: 0.0469
+Epoch 50/100, Loss: 0.0355
+Epoch 60/100, Loss: 0.0324
+Epoch 70/100, Loss: 0.0318
+Epoch 80/100, Loss: 0.0288
+Epoch 90/100, Loss: 0.0273
+Epoch 100/100, Loss: 0.0259
+One-Level MoE Test MSE: 0.0343
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0780
+Epoch 20/100, Loss: 0.0470
+Epoch 30/100, Loss: 0.0383
+Epoch 40/100, Loss: 0.0338
+Epoch 50/100, Loss: 0.0327
+Epoch 60/100, Loss: 0.0272
+Epoch 70/100, Loss: 0.0277
+Epoch 80/100, Loss: 0.0253
+Epoch 90/100, Loss: 0.0269
+Epoch 100/100, Loss: 0.0376
+Two-Level HME Test MSE: 0.0275
+Running sim_plots.py with test_rs=2 and test_noise=0.11
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1091
+Epoch 20/100, Loss: 0.0766
+Epoch 30/100, Loss: 0.0669
+Epoch 40/100, Loss: 0.0430
+Epoch 50/100, Loss: 0.0357
+Epoch 60/100, Loss: 0.0329
+Epoch 70/100, Loss: 0.0309
+Epoch 80/100, Loss: 0.0283
+Epoch 90/100, Loss: 0.0286
+Epoch 100/100, Loss: 0.0291
+One-Level MoE Test MSE: 0.0282
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0923
+Epoch 20/100, Loss: 0.0673
+Epoch 30/100, Loss: 0.0526
+Epoch 40/100, Loss: 0.0352
+Epoch 50/100, Loss: 0.0308
+Epoch 60/100, Loss: 0.0284
+Epoch 70/100, Loss: 0.0270
+Epoch 80/100, Loss: 0.0321
+Epoch 90/100, Loss: 0.0231
+Epoch 100/100, Loss: 0.0241
+Two-Level HME Test MSE: 0.0277
+Running sim_plots.py with test_rs=2 and test_noise=0.12
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0870
+Epoch 20/100, Loss: 0.0498
+Epoch 30/100, Loss: 0.0408
+Epoch 40/100, Loss: 0.0465
+Epoch 50/100, Loss: 0.0328
+Epoch 60/100, Loss: 0.0287
+Epoch 70/100, Loss: 0.0280
+Epoch 80/100, Loss: 0.0259
+Epoch 90/100, Loss: 0.0310
+Epoch 100/100, Loss: 0.0274
+One-Level MoE Test MSE: 0.0386
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0692
+Epoch 20/100, Loss: 0.0445
+Epoch 30/100, Loss: 0.0548
+Epoch 40/100, Loss: 0.0356
+Epoch 50/100, Loss: 0.0299
+Epoch 60/100, Loss: 0.0296
+Epoch 70/100, Loss: 0.0377
+Epoch 80/100, Loss: 0.0287
+Epoch 90/100, Loss: 0.0317
+Epoch 100/100, Loss: 0.0235
+Two-Level HME Test MSE: 0.0326
+Running sim_plots.py with test_rs=2 and test_noise=0.13
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1144
+Epoch 20/100, Loss: 0.0721
+Epoch 30/100, Loss: 0.0577
+Epoch 40/100, Loss: 0.0460
+Epoch 50/100, Loss: 0.0396
+Epoch 60/100, Loss: 0.0343
+Epoch 70/100, Loss: 0.0423
+Epoch 80/100, Loss: 0.0328
+Epoch 90/100, Loss: 0.0303
+Epoch 100/100, Loss: 0.0279
+One-Level MoE Test MSE: 0.0430
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0891
+Epoch 20/100, Loss: 0.0525
+Epoch 30/100, Loss: 0.0424
+Epoch 40/100, Loss: 0.0365
+Epoch 50/100, Loss: 0.0342
+Epoch 60/100, Loss: 0.0363
+Epoch 70/100, Loss: 0.0315
+Epoch 80/100, Loss: 0.0328
+Epoch 90/100, Loss: 0.0290
+Epoch 100/100, Loss: 0.0254
+Two-Level HME Test MSE: 0.0346
+Running sim_plots.py with test_rs=2 and test_noise=0.14
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1052
+Epoch 20/100, Loss: 0.0519
+Epoch 30/100, Loss: 0.0403
+Epoch 40/100, Loss: 0.0349
+Epoch 50/100, Loss: 0.0351
+Epoch 60/100, Loss: 0.0318
+Epoch 70/100, Loss: 0.0291
+Epoch 80/100, Loss: 0.0256
+Epoch 90/100, Loss: 0.0275
+Epoch 100/100, Loss: 0.0239
+One-Level MoE Test MSE: 0.0363
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1011
+Epoch 20/100, Loss: 0.0395
+Epoch 30/100, Loss: 0.0319
+Epoch 40/100, Loss: 0.0308
+Epoch 50/100, Loss: 0.0289
+Epoch 60/100, Loss: 0.0267
+Epoch 70/100, Loss: 0.0278
+Epoch 80/100, Loss: 0.0233
+Epoch 90/100, Loss: 0.0219
+Epoch 100/100, Loss: 0.0259
+Two-Level HME Test MSE: 0.0352
+Running sim_plots.py with test_rs=2 and test_noise=0.15
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0963
+Epoch 20/100, Loss: 0.0563
+Epoch 30/100, Loss: 0.0390
+Epoch 40/100, Loss: 0.0330
+Epoch 50/100, Loss: 0.0318
+Epoch 60/100, Loss: 0.0296
+Epoch 70/100, Loss: 0.0280
+Epoch 80/100, Loss: 0.0283
+Epoch 90/100, Loss: 0.0269
+Epoch 100/100, Loss: 0.0256
+One-Level MoE Test MSE: 0.0386
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1006
+Epoch 20/100, Loss: 0.0753
+Epoch 30/100, Loss: 0.0467
+Epoch 40/100, Loss: 0.0370
+Epoch 50/100, Loss: 0.0327
+Epoch 60/100, Loss: 0.0298
+Epoch 70/100, Loss: 0.0313
+Epoch 80/100, Loss: 0.0280
+Epoch 90/100, Loss: 0.0266
+Epoch 100/100, Loss: 0.0282
+Two-Level HME Test MSE: 0.0394
+Running sim_plots.py with test_rs=2 and test_noise=0.2
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1022
+Epoch 20/100, Loss: 0.0670
+Epoch 30/100, Loss: 0.0535
+Epoch 40/100, Loss: 0.0492
+Epoch 50/100, Loss: 0.0498
+Epoch 60/100, Loss: 0.0432
+Epoch 70/100, Loss: 0.0362
+Epoch 80/100, Loss: 0.0330
+Epoch 90/100, Loss: 0.0360
+Epoch 100/100, Loss: 0.0303
+One-Level MoE Test MSE: 0.0595
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0825
+Epoch 20/100, Loss: 0.0616
+Epoch 30/100, Loss: 0.0519
+Epoch 40/100, Loss: 0.0409
+Epoch 50/100, Loss: 0.0423
+Epoch 60/100, Loss: 0.0380
+Epoch 70/100, Loss: 0.0355
+Epoch 80/100, Loss: 0.0323
+Epoch 90/100, Loss: 0.0343
+Epoch 100/100, Loss: 0.0306
+Two-Level HME Test MSE: 0.0608
+Running sim_plots.py with test_rs=2 and test_noise=0.25
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0945
+Epoch 20/100, Loss: 0.0463
+Epoch 30/100, Loss: 0.0394
+Epoch 40/100, Loss: 0.0350
+Epoch 50/100, Loss: 0.0314
+Epoch 60/100, Loss: 0.0275
+Epoch 70/100, Loss: 0.0260
+Epoch 80/100, Loss: 0.0287
+Epoch 90/100, Loss: 0.0285
+Epoch 100/100, Loss: 0.0253
+One-Level MoE Test MSE: 0.0809
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0838
+Epoch 20/100, Loss: 0.0610
+Epoch 30/100, Loss: 0.0460
+Epoch 40/100, Loss: 0.0386
+Epoch 50/100, Loss: 0.0351
+Epoch 60/100, Loss: 0.0342
+Epoch 70/100, Loss: 0.0293
+Epoch 80/100, Loss: 0.0270
+Epoch 90/100, Loss: 0.0300
+Epoch 100/100, Loss: 0.0264
+Two-Level HME Test MSE: 0.0727
+Running sim_plots.py with test_rs=2 and test_noise=0.3
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0916
+Epoch 20/100, Loss: 0.0468
+Epoch 30/100, Loss: 0.0345
+Epoch 40/100, Loss: 0.0282
+Epoch 50/100, Loss: 0.0296
+Epoch 60/100, Loss: 0.0263
+Epoch 70/100, Loss: 0.0252
+Epoch 80/100, Loss: 0.0242
+Epoch 90/100, Loss: 0.0301
+Epoch 100/100, Loss: 0.0251
+One-Level MoE Test MSE: 0.0968
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0975
+Epoch 20/100, Loss: 0.0565
+Epoch 30/100, Loss: 0.0467
+Epoch 40/100, Loss: 0.0390
+Epoch 50/100, Loss: 0.0356
+Epoch 60/100, Loss: 0.0293
+Epoch 70/100, Loss: 0.0356
+Epoch 80/100, Loss: 0.0341
+Epoch 90/100, Loss: 0.0259
+Epoch 100/100, Loss: 0.0269
+Two-Level HME Test MSE: 0.1008
+Running sim_plots.py with test_rs=3 and test_noise=0.01
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1124
+Epoch 20/100, Loss: 0.0764
+Epoch 30/100, Loss: 0.0607
+Epoch 40/100, Loss: 0.0493
+Epoch 50/100, Loss: 0.0418
+Epoch 60/100, Loss: 0.0384
+Epoch 70/100, Loss: 0.0423
+Epoch 80/100, Loss: 0.0351
+Epoch 90/100, Loss: 0.0332
+Epoch 100/100, Loss: 0.0327
+One-Level MoE Test MSE: 0.0231
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0743
+Epoch 20/100, Loss: 0.0532
+Epoch 30/100, Loss: 0.0461
+Epoch 40/100, Loss: 0.0400
+Epoch 50/100, Loss: 0.0383
+Epoch 60/100, Loss: 0.0435
+Epoch 70/100, Loss: 0.0326
+Epoch 80/100, Loss: 0.0317
+Epoch 90/100, Loss: 0.0371
+Epoch 100/100, Loss: 0.0296
+Two-Level HME Test MSE: 0.0165
+Running sim_plots.py with test_rs=3 and test_noise=0.02
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1107
+Epoch 20/100, Loss: 0.0738
+Epoch 30/100, Loss: 0.0573
+Epoch 40/100, Loss: 0.0495
+Epoch 50/100, Loss: 0.0413
+Epoch 60/100, Loss: 0.0355
+Epoch 70/100, Loss: 0.0335
+Epoch 80/100, Loss: 0.0305
+Epoch 90/100, Loss: 0.0310
+Epoch 100/100, Loss: 0.0294
+One-Level MoE Test MSE: 0.0175
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0786
+Epoch 20/100, Loss: 0.0624
+Epoch 30/100, Loss: 0.0480
+Epoch 40/100, Loss: 0.0418
+Epoch 50/100, Loss: 0.0382
+Epoch 60/100, Loss: 0.0341
+Epoch 70/100, Loss: 0.0297
+Epoch 80/100, Loss: 0.0293
+Epoch 90/100, Loss: 0.0291
+Epoch 100/100, Loss: 0.0263
+Two-Level HME Test MSE: 0.0165
+Running sim_plots.py with test_rs=3 and test_noise=0.03
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0833
+Epoch 20/100, Loss: 0.0732
+Epoch 30/100, Loss: 0.0686
+Epoch 40/100, Loss: 0.0710
+Epoch 50/100, Loss: 0.0634
+Epoch 60/100, Loss: 0.0593
+Epoch 70/100, Loss: 0.0565
+Epoch 80/100, Loss: 0.0346
+Epoch 90/100, Loss: 0.0318
+Epoch 100/100, Loss: 0.0299
+One-Level MoE Test MSE: 0.0190
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0754
+Epoch 20/100, Loss: 0.0420
+Epoch 30/100, Loss: 0.0400
+Epoch 40/100, Loss: 0.0330
+Epoch 50/100, Loss: 0.0314
+Epoch 60/100, Loss: 0.0296
+Epoch 70/100, Loss: 0.0269
+Epoch 80/100, Loss: 0.0317
+Epoch 90/100, Loss: 0.0241
+Epoch 100/100, Loss: 0.0229
+Two-Level HME Test MSE: 0.0144
+Running sim_plots.py with test_rs=3 and test_noise=0.04
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1022
+Epoch 20/100, Loss: 0.0703
+Epoch 30/100, Loss: 0.0557
+Epoch 40/100, Loss: 0.0401
+Epoch 50/100, Loss: 0.0400
+Epoch 60/100, Loss: 0.0328
+Epoch 70/100, Loss: 0.0333
+Epoch 80/100, Loss: 0.0301
+Epoch 90/100, Loss: 0.0307
+Epoch 100/100, Loss: 0.0278
+One-Level MoE Test MSE: 0.0211
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0803
+Epoch 20/100, Loss: 0.0648
+Epoch 30/100, Loss: 0.0432
+Epoch 40/100, Loss: 0.0384
+Epoch 50/100, Loss: 0.0339
+Epoch 60/100, Loss: 0.0315
+Epoch 70/100, Loss: 0.0321
+Epoch 80/100, Loss: 0.0295
+Epoch 90/100, Loss: 0.0250
+Epoch 100/100, Loss: 0.0247
+Two-Level HME Test MSE: 0.0150
+Running sim_plots.py with test_rs=3 and test_noise=0.05
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1453
+Epoch 20/100, Loss: 0.0758
+Epoch 30/100, Loss: 0.0502
+Epoch 40/100, Loss: 0.0395
+Epoch 50/100, Loss: 0.0343
+Epoch 60/100, Loss: 0.0311
+Epoch 70/100, Loss: 0.0275
+Epoch 80/100, Loss: 0.0267
+Epoch 90/100, Loss: 0.0261
+Epoch 100/100, Loss: 0.0245
+One-Level MoE Test MSE: 0.0260
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1121
+Epoch 20/100, Loss: 0.0635
+Epoch 30/100, Loss: 0.0468
+Epoch 40/100, Loss: 0.0389
+Epoch 50/100, Loss: 0.0373
+Epoch 60/100, Loss: 0.0419
+Epoch 70/100, Loss: 0.0355
+Epoch 80/100, Loss: 0.0322
+Epoch 90/100, Loss: 0.0376
+Epoch 100/100, Loss: 0.0307
+Two-Level HME Test MSE: 0.0247
+Running sim_plots.py with test_rs=3 and test_noise=0.06
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.0845
+Epoch 20/100, Loss: 0.0484
+Epoch 30/100, Loss: 0.0413
+Epoch 40/100, Loss: 0.0345
+Epoch 50/100, Loss: 0.0341
+Epoch 60/100, Loss: 0.0309
+Epoch 70/100, Loss: 0.0319
+Epoch 80/100, Loss: 0.0324
+Epoch 90/100, Loss: 0.0246
+Epoch 100/100, Loss: 0.0257
+One-Level MoE Test MSE: 0.0178
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0992
+Epoch 20/100, Loss: 0.0569
+Epoch 30/100, Loss: 0.0522
+Epoch 40/100, Loss: 0.0422
+Epoch 50/100, Loss: 0.0377
+Epoch 60/100, Loss: 0.0327
+Epoch 70/100, Loss: 0.0297
+Epoch 80/100, Loss: 0.0311
+Epoch 90/100, Loss: 0.0278
+Epoch 100/100, Loss: 0.0289
+Two-Level HME Test MSE: 0.0203
+Running sim_plots.py with test_rs=3 and test_noise=0.07
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1003
+Epoch 20/100, Loss: 0.0698
+Epoch 30/100, Loss: 0.0489
+Epoch 40/100, Loss: 0.0403
+Epoch 50/100, Loss: 0.0349
+Epoch 60/100, Loss: 0.0323
+Epoch 70/100, Loss: 0.0312
+Epoch 80/100, Loss: 0.0297
+Epoch 90/100, Loss: 0.0309
+Epoch 100/100, Loss: 0.0270
+One-Level MoE Test MSE: 0.0215
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.0945
+Epoch 20/100, Loss: 0.0687
+Epoch 30/100, Loss: 0.0577
+Epoch 40/100, Loss: 0.0472
+Epoch 50/100, Loss: 0.0405
+Epoch 60/100, Loss: 0.0362
+Epoch 70/100, Loss: 0.0442
+Epoch 80/100, Loss: 0.0349
+Epoch 90/100, Loss: 0.0320
+Epoch 100/100, Loss: 0.0350
+Two-Level HME Test MSE: 0.0237
+Running sim_plots.py with test_rs=3 and test_noise=0.08
+Training One-Level MoE:
+Epoch 10/100, Loss: 0.1079
+Epoch 20/100, Loss: 0.0640
+Epoch 30/100, Loss: 0.0550
+Epoch 40/100, Loss: 0.0623
+Epoch 50/100, Loss: 0.0482
+Epoch 60/100, Loss: 0.0433
+Epoch 70/100, Loss: 0.0450
+Epoch 80/100, Loss: 0.0398
+Epoch 90/100, Loss: 0.0379
+Epoch 100/100, Loss: 0.0436
+One-Level MoE Test MSE: 0.0345
+
+Training Two-Level HME:
+Epoch 10/100, Loss: 0.1094
+Epoch 20/100, Loss: 0.0570
+Epoch 30/100, Loss: 0.0436
+Epoch 40/100, Loss: 0.0386
+Epoch 50/100, Loss: 0.0377
+Epoch 60/100, Loss: 0.0378
+Epoch 70/100, Loss: 0.0335
+Epoch 80/100, Loss: 0.0361
+Epoch 90/100, Loss: 0.0344
+Epoch 100/100, Loss: 0.0351
+Two-Level HME Test MSE: 0.0274
+Running sim_plots.py with test_rs=3 and test_noise=0.09

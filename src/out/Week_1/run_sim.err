@@ -1,0 +1,2 @@
+/var/spool/slurm/job416049/slurm_script: line 11: /home/pham156/.bashrc: No such file or directory
+[2026-02-04T15:20:13.661] error: *** JOB 416049 ON scholar-g001 CANCELLED AT 2026-02-04T15:20:13 DUE to SIGNAL Terminated ***

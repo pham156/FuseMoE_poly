@@ -1,0 +1,636 @@
+Mon Feb 23 00:49:28 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100 80GB PCIe          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   30C    P0             44W /  300W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Running gating=gaussian, router_type=joint, num_experts=3, top_k=2, noisy_gating=True
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/noisy/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.782057757057757
+Best auc 0.782057757057757
+Current auprc 0.38637856040145346
+Best auprc 0.38637856040145346
+Current f1 0.267515923566879
+Best f1 0.267515923566879
+1 False
+Current auc 0.806164206164206
+Best auc 0.806164206164206
+Current auprc 0.43208108739929807
+Best auprc 0.43208108739929807
+Current f1 0.45045045045045046
+Best f1 0.45045045045045046
+2 False
+Current auc 0.8040727790727791
+Best auc 0.806164206164206
+Current auprc 0.42430863906352473
+Best auprc 0.43208108739929807
+Current f1 0.449438202247191
+Best f1 0.45045045045045046
+3 False
+Current auc 0.8088901838901839
+Best auc 0.8088901838901839
+Current auprc 0.4388400196805369
+Best auprc 0.4388400196805369
+Current f1 0.32098765432098764
+Best f1 0.45045045045045046
+4 False
+Current auc 0.8138047138047138
+Best auc 0.8138047138047138
+Current auprc 0.44642527836268986
+Best auprc 0.44642527836268986
+Current f1 0.3516483516483517
+Best f1 0.45045045045045046
+5 False
+Current auc 0.810068635068635
+Best auc 0.8138047138047138
+Current auprc 0.43437763191013773
+Best auprc 0.44642527836268986
+Current f1 0.37777777777777777
+Best f1 0.45045045045045046
+6 False
+Current auc 0.8129435379435379
+Best auc 0.8138047138047138
+Current auprc 0.44229105946448
+Best auprc 0.44642527836268986
+Current f1 0.44541484716157204
+Best f1 0.45045045045045046
+7 False
+Current auc 0.8112988862988864
+Best auc 0.8138047138047138
+Current auprc 0.43808660683600203
+Best auprc 0.44642527836268986
+Current f1 0.3894736842105263
+Best f1 0.45045045045045046
+Best validation (f1): 0.45045045045045046
+
+===== FINAL TEST RESULTS =====
+auc: 0.806179914044361
+auprc: 0.4612776039758177
+f1: 0.4636363636363636
+================================
+
+New maximum memory allocated on GPU: 5403784704 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/noisy/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 821.5420672893524 seconds ---
+Running gating=gaussian, router_type=joint, num_experts=3, top_k=2, noisy_gating=False
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/clean/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7786648536648536
+Best auc 0.7786648536648536
+Current auprc 0.3781831667785864
+Best auprc 0.3781831667785864
+Current f1 0.25
+Best f1 0.25
+1 False
+Current auc 0.8086506086506087
+Best auc 0.8086506086506087
+Current auprc 0.4328488928926372
+Best auprc 0.4328488928926372
+Current f1 0.45414847161572053
+Best f1 0.45414847161572053
+2 False
+Current auc 0.8048562548562549
+Best auc 0.8086506086506087
+Current auprc 0.4301563600520803
+Best auprc 0.4328488928926372
+Current f1 0.45390070921985815
+Best f1 0.45414847161572053
+3 False
+Current auc 0.8082621082621083
+Best auc 0.8086506086506087
+Current auprc 0.4423570871034281
+Best auprc 0.4423570871034281
+Current f1 0.3048780487804878
+Best f1 0.45414847161572053
+4 False
+Current auc 0.8131313131313131
+Best auc 0.8131313131313131
+Current auprc 0.44715032843005453
+Best auprc 0.44715032843005453
+Current f1 0.35294117647058826
+Best f1 0.45414847161572053
+5 False
+Current auc 0.8093952343952344
+Best auc 0.8131313131313131
+Current auprc 0.4364382577301
+Best auprc 0.44715032843005453
+Current f1 0.3333333333333333
+Best f1 0.45414847161572053
+6 False
+Current auc 0.8133773633773633
+Best auc 0.8133773633773633
+Current auprc 0.4435019525083572
+Best auprc 0.44715032843005453
+Current f1 0.43171806167400884
+Best f1 0.45414847161572053
+7 False
+Current auc 0.8104506604506605
+Best auc 0.8133773633773633
+Current auprc 0.44170964419461567
+Best auprc 0.44715032843005453
+Current f1 0.3783783783783784
+Best f1 0.45414847161572053
+Best validation (f1): 0.45414847161572053
+
+===== FINAL TEST RESULTS =====
+auc: 0.8063898631625748
+auprc: 0.4650676792888541
+f1: 0.4649122807017544
+================================
+
+New maximum memory allocated on GPU: 5401130496 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/clean/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 715.2309634685516 seconds ---
+Running gating=gaussian, router_type=joint, num_experts=4, top_k=2, noisy_gating=True
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/noisy/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7929163429163429
+Best auc 0.7929163429163429
+Current auprc 0.3934541312349913
+Best auprc 0.3934541312349913
+Current f1 0.37714285714285717
+Best f1 0.37714285714285717
+1 False
+Current auc 0.8078671328671327
+Best auc 0.8078671328671327
+Current auprc 0.4407479044166329
+Best auprc 0.4407479044166329
+Current f1 0.3333333333333333
+Best f1 0.37714285714285717
+2 False
+Current auc 0.8047591297591298
+Best auc 0.8078671328671327
+Current auprc 0.436050980435386
+Best auprc 0.4407479044166329
+Current f1 0.45132743362831856
+Best f1 0.45132743362831856
+3 False
+Current auc 0.8105413105413106
+Best auc 0.8105413105413106
+Current auprc 0.44329942782404375
+Best auprc 0.44329942782404375
+Current f1 0.34782608695652173
+Best f1 0.45132743362831856
+4 False
+Current auc 0.8102499352499353
+Best auc 0.8105413105413106
+Current auprc 0.4364291482871323
+Best auprc 0.44329942782404375
+Current f1 0.3769633507853403
+Best f1 0.45132743362831856
+5 False
+Current auc 0.8071354571354571
+Best auc 0.8105413105413106
+Current auprc 0.4315841449295101
+Best auprc 0.44329942782404375
+Current f1 0.37777777777777777
+Best f1 0.45132743362831856
+6 False
+Current auc 0.8126910126910126
+Best auc 0.8126910126910126
+Current auprc 0.4477969857021562
+Best auprc 0.4477969857021562
+Current f1 0.4602510460251046
+Best f1 0.4602510460251046
+7 False
+Current auc 0.8117391867391868
+Best auc 0.8126910126910126
+Current auprc 0.4363735521101618
+Best auprc 0.4477969857021562
+Current f1 0.3253012048192771
+Best f1 0.4602510460251046
+Best validation (f1): 0.4602510460251046
+
+===== FINAL TEST RESULTS =====
+auc: 0.814800177839253
+auprc: 0.4466566146285136
+f1: 0.48535564853556484
+================================
+
+New maximum memory allocated on GPU: 6768928768 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/noisy/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 790.8392729759216 seconds ---
+Running gating=gaussian, router_type=joint, num_experts=4, top_k=2, noisy_gating=False
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='joint', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/clean/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7972222222222223
+Best auc 0.7972222222222223
+Current auprc 0.39711181213382774
+Best auprc 0.39711181213382774
+Current f1 0.38202247191011235
+Best f1 0.38202247191011235
+1 False
+Current auc 0.8158508158508159
+Best auc 0.8158508158508159
+Current auprc 0.45252721252904593
+Best auprc 0.45252721252904593
+Current f1 0.3391812865497076
+Best f1 0.38202247191011235
+2 False
+Current auc 0.8128399378399378
+Best auc 0.8158508158508159
+Current auprc 0.45340206738495387
+Best auprc 0.45340206738495387
+Current f1 0.45454545454545453
+Best f1 0.45454545454545453
+3 False
+Current auc 0.8143809893809894
+Best auc 0.8158508158508159
+Current auprc 0.45579049702985724
+Best auprc 0.45579049702985724
+Current f1 0.3894736842105263
+Best f1 0.45454545454545453
+4 False
+Current auc 0.8150155400155401
+Best auc 0.8158508158508159
+Current auprc 0.4451960409524568
+Best auprc 0.45579049702985724
+Current f1 0.40404040404040403
+Best f1 0.45454545454545453
+5 False
+Current auc 0.808954933954934
+Best auc 0.8158508158508159
+Current auprc 0.4452116749706663
+Best auprc 0.45579049702985724
+Current f1 0.3333333333333333
+Best f1 0.45454545454545453
+6 False
+Current auc 0.8176961926961928
+Best auc 0.8176961926961928
+Current auprc 0.45489975947607586
+Best auprc 0.45579049702985724
+Current f1 0.4701492537313433
+Best f1 0.4701492537313433
+7 False
+Current auc 0.8135716135716136
+Best auc 0.8176961926961928
+Current auprc 0.44253113992756016
+Best auprc 0.45579049702985724
+Current f1 0.2948717948717949
+Best f1 0.4701492537313433
+Best validation (f1): 0.4701492537313433
+
+===== FINAL TEST RESULTS =====
+auc: 0.8093538507138269
+auprc: 0.44501517297682863
+f1: 0.5057471264367817
+================================
+
+New maximum memory allocated on GPU: 6765389824 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/joint/clean/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 711.3471987247467 seconds ---
+Running gating=gaussian, router_type=permod, num_experts=3, top_k=2, noisy_gating=True
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/noisy/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7852175602175603
+Best auc 0.7852175602175603
+Current auprc 0.3778748762101074
+Best auprc 0.3778748762101074
+Current f1 0.03361344537815126
+Best f1 0.03361344537815126
+1 False
+Current auc 0.7974682724682726
+Best auc 0.7974682724682726
+Current auprc 0.4137780233851178
+Best auprc 0.4137780233851178
+Current f1 0.375
+Best f1 0.375
+2 False
+Current auc 0.8066757316757316
+Best auc 0.8066757316757316
+Current auprc 0.4395118889795714
+Best auprc 0.4395118889795714
+Current f1 0.3105590062111801
+Best f1 0.375
+3 False
+Current auc 0.8087995337995337
+Best auc 0.8087995337995337
+Current auprc 0.444165159992612
+Best auprc 0.444165159992612
+Current f1 0.3132530120481928
+Best f1 0.375
+4 False
+Current auc 0.8072779072779073
+Best auc 0.8087995337995337
+Current auprc 0.4302690576285447
+Best auprc 0.444165159992612
+Current f1 0.19858156028368795
+Best f1 0.375
+5 False
+Current auc 0.8138241388241388
+Best auc 0.8138241388241388
+Current auprc 0.4364099010282555
+Best auprc 0.444165159992612
+Current f1 0.44660194174757284
+Best f1 0.44660194174757284
+6 False
+Current auc 0.8053613053613053
+Best auc 0.8138241388241388
+Current auprc 0.43255587758211334
+Best auprc 0.444165159992612
+Current f1 0.41450777202072536
+Best f1 0.44660194174757284
+7 False
+Current auc 0.8099779849779849
+Best auc 0.8138241388241388
+Current auprc 0.43067630853398264
+Best auprc 0.444165159992612
+Current f1 0.4117647058823529
+Best f1 0.44660194174757284
+Best validation (f1): 0.44660194174757284
+
+===== FINAL TEST RESULTS =====
+auc: 0.8046361705280837
+auprc: 0.41808633354769026
+f1: 0.3645320197044335
+================================
+
+New maximum memory allocated on GPU: 4164631040 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/noisy/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 1109.7944886684418 seconds ---
+Running gating=gaussian, router_type=permod, num_experts=3, top_k=2, noisy_gating=False
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[3], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/clean/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7883579383579383
+Best auc 0.7883579383579383
+Current auprc 0.37430435623288494
+Best auprc 0.37430435623288494
+Current f1 0.0
+Best f1 0
+1 False
+Current auc 0.8006280756280756
+Best auc 0.8006280756280756
+Current auprc 0.42049825797134743
+Best auprc 0.42049825797134743
+Current f1 0.3655913978494624
+Best f1 0.3655913978494624
+2 False
+Current auc 0.8067340067340067
+Best auc 0.8067340067340067
+Current auprc 0.4335323127668581
+Best auprc 0.4335323127668581
+Current f1 0.2802547770700637
+Best f1 0.3655913978494624
+3 False
+Current auc 0.8081326081326082
+Best auc 0.8081326081326082
+Current auprc 0.44714750040605544
+Best auprc 0.44714750040605544
+Current f1 0.33136094674556216
+Best f1 0.3655913978494624
+4 False
+Current auc 0.8070318570318569
+Best auc 0.8081326081326082
+Current auprc 0.43165339795492375
+Best auprc 0.44714750040605544
+Current f1 0.18705035971223022
+Best f1 0.3655913978494624
+5 False
+Current auc 0.8121859621859623
+Best auc 0.8121859621859623
+Current auprc 0.435653649646811
+Best auprc 0.44714750040605544
+Current f1 0.3516483516483517
+Best f1 0.3655913978494624
+6 False
+Current auc 0.8098679098679099
+Best auc 0.8121859621859623
+Current auprc 0.43868016487987727
+Best auprc 0.44714750040605544
+Current f1 0.34444444444444444
+Best f1 0.3655913978494624
+7 False
+Current auc 0.8094988344988345
+Best auc 0.8121859621859623
+Current auprc 0.432768847303619
+Best auprc 0.44714750040605544
+Current f1 0.4236453201970443
+Best f1 0.4236453201970443
+Best validation (f1): 0.4236453201970443
+
+===== FINAL TEST RESULTS =====
+auc: 0.8093847255841526
+auprc: 0.43707308974590076
+f1: 0.39593908629441626
+================================
+
+New maximum memory allocated on GPU: 4164624896 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/clean/balance_0.01/[3]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 935.3594651222229 seconds ---
+Running gating=gaussian, router_type=permod, num_experts=4, top_k=2, noisy_gating=True
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=True, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/noisy/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.7823879823879822
+Best auc 0.7823879823879822
+Current auprc 0.3831770532023454
+Best auprc 0.3831770532023454
+Current f1 0.39662447257383965
+Best f1 0.39662447257383965
+1 False
+Current auc 0.8046361046361046
+Best auc 0.8046361046361046
+Current auprc 0.4306927128234155
+Best auprc 0.4306927128234155
+Current f1 0.4353312302839117
+Best f1 0.4353312302839117
+2 False
+Current auc 0.8062742812742814
+Best auc 0.8062742812742814
+Current auprc 0.43174497638591586
+Best auprc 0.43174497638591586
+Current f1 0.3488372093023256
+Best f1 0.4353312302839117
+3 False
+Current auc 0.8075304325304326
+Best auc 0.8075304325304326
+Current auprc 0.41974845751093964
+Best auprc 0.43174497638591586
+Current f1 0.4394904458598726
+Best f1 0.4394904458598726
+4 False
+Current auc 0.8122507122507123
+Best auc 0.8122507122507123
+Current auprc 0.4343408486626187
+Best auprc 0.4343408486626187
+Current f1 0.34146341463414637
+Best f1 0.4394904458598726
+5 False
+Current auc 0.8201761201761202
+Best auc 0.8201761201761202
+Current auprc 0.43055718449621283
+Best auprc 0.4343408486626187
+Current f1 0.2
+Best f1 0.4394904458598726
+6 False
+Current auc 0.8110463610463611
+Best auc 0.8201761201761202
+Current auprc 0.4235492415651527
+Best auprc 0.4343408486626187
+Current f1 0.36065573770491804
+Best f1 0.4394904458598726
+7 False
+Current auc 0.8171587671587672
+Best auc 0.8201761201761202
+Current auprc 0.4330700211984463
+Best auprc 0.4343408486626187
+Current f1 0.4195121951219512
+Best f1 0.4394904458598726
+Best validation (f1): 0.4394904458598726
+
+===== FINAL TEST RESULTS =====
+auc: 0.8074149088573829
+auprc: 0.4752265261516385
+f1: 0.5096774193548387
+================================
+
+New maximum memory allocated on GPU: 4963628544 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/noisy/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 1163.9215953350067 seconds ---
+Running gating=gaussian, router_type=permod, num_experts=4, top_k=2, noisy_gating=False
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True)
+cuda
+Namespace(task='ihm-48-cxr-notes-ecg', file_path='../../data/MIMIC-IV', output_dir='../run/TS_CXR_Text', tensorboard_dir=None, seed=42, mode='train', modeltype='TS_CXR_Text', eval_score=['auc', 'auprc', 'f1'], primary_metric='f1', num_labels=2, max_length=1024, pad_to_max_length=False, model_path=None, train_batch_size=2, eval_batch_size=8, num_update_bert_epochs=2, num_train_epochs=8, txt_learning_rate=2e-05, ts_learning_rate=0.0004, gradient_accumulation_steps=16, weight_decay=0.01, lr_scheduler_type='linear', pt_mask_ratio=0.15, mean_mask_length=3, chunk=False, chunk_type='sent_doc_pos', warmup_proportion=0.1, kernel_size=1, num_heads=8, layers=3, cross_layers=3, embed_dim=128, irregular_learn_emb_ts=True, irregular_learn_emb_text=True, irregular_learn_emb_cxr=True, irregular_learn_emb_ecg=True, reg_ts=True, tt_max=48, embed_time=64, ts_to_txt=False, txt_to_ts=False, dropout=0.1, model_name='bioLongformer', num_of_notes=5, notes_order='Last', ratio_notes_order=None, bertcount=0, first_n_item=3, fine_tune=False, self_cross=False, TS_mixup=True, mixup_level='batch', fp16=True, debug=False, generate_data=False, FTLSTM=False, Interp=False, cpu=False, datagereate_seed=42, TS_model='Atten', cross_method='moe', hidden_size=512, gating_function=['gaussian'], poly_power=None, poly_powers=[2], student_degree=None, num_of_experts=[4], top_k=[2], disjoint_top_k=2, num_modalities=3, use_pt_text_embeddings=True, router_type='permod', use_balance_loss=True, balance_loss_coef=0.01, noisy_gating=False, normalized=True, mixed_precision='fp16')
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/clean/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+Using ../../data/MIMIC-IV/train_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/val_ihm-48-cxr-notes-ecg_stays.pkl
+Using ../../data/MIMIC-IV/test_ihm-48-cxr-notes-ecg_stays.pkl
+cuda
+0 False
+Current auc 0.78996373996374
+Best auc 0.78996373996374
+Current auprc 0.3951417914657087
+Best auprc 0.3951417914657087
+Current f1 0.42570281124497994
+Best f1 0.42570281124497994
+1 False
+Current auc 0.8123413623413623
+Best auc 0.8123413623413623
+Current auprc 0.45761270414317284
+Best auprc 0.45761270414317284
+Current f1 0.45993031358885017
+Best f1 0.45993031358885017
+2 False
+Current auc 0.8139795389795389
+Best auc 0.8139795389795389
+Current auprc 0.45701033744746467
+Best auprc 0.45761270414317284
+Current f1 0.3018867924528302
+Best f1 0.45993031358885017
+3 False
+Current auc 0.81514504014504
+Best auc 0.81514504014504
+Current auprc 0.45279150102238264
+Best auprc 0.45761270414317284
+Current f1 0.47101449275362317
+Best f1 0.47101449275362317
+4 False
+Current auc 0.8152680652680653
+Best auc 0.8152680652680653
+Current auprc 0.45340293845839325
+Best auprc 0.45761270414317284
+Current f1 0.3431952662721893
+Best f1 0.47101449275362317
+5 False
+Current auc 0.8209854959854961
+Best auc 0.8209854959854961
+Current auprc 0.4636942709746574
+Best auprc 0.4636942709746574
+Current f1 0.2482758620689655
+Best f1 0.47101449275362317
+6 False
+Current auc 0.8191530691530691
+Best auc 0.8209854959854961
+Current auprc 0.44958047329995987
+Best auprc 0.4636942709746574
+Current f1 0.3595505617977528
+Best f1 0.47101449275362317
+7 False
+Current auc 0.8225200725200725
+Best auc 0.8225200725200725
+Current auprc 0.45566455055087
+Best auprc 0.4636942709746574
+Current f1 0.43781094527363185
+Best f1 0.47101449275362317
+Best validation (f1): 0.47101449275362317
+
+===== FINAL TEST RESULTS =====
+auc: 0.8090389270365065
+auprc: 0.4628400272799881
+f1: 0.5089605734767025
+================================
+
+New maximum memory allocated on GPU: 4963628544 bytes
+Results saved in:
+../run/TS_CXR_Text/ihm-48-cxr-notes-ecg/TS_CXR_Text/TS_48/Atten/Text_48/bioLongformer/1024/moe/['gaussian']/permod/clean/balance_0.01/[4]/top_[2]/batch/irregular_TS_64/irregular_Text_64/use_pt_text_embeddings/2e-05_2_0_0.0004_8_8_128_1_2_512/
+--- 993.7707996368408 seconds ---
