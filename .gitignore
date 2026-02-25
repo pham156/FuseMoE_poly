@@ -1,0 +1,6 @@
+**/wandb/
+**/offline-run-*/
+*.out
+*.err
+*.log
+*.pkl
