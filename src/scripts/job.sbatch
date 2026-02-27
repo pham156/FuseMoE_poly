@@ -6,8 +6,8 @@
 #SBATCH --mem=64G
 #SBATCH -t 4:00:00
 #SBATCH -J run_mimiciv_poly
-#SBATCH -o ../out/Week_3/%x_%j.out
-#SBATCH -e ../out/Week_3/%x_%j.err
+#SBATCH -o ../../out/Week_4/%x_%j.out
+#SBATCH -e ../../out/Week_4/%x_%j.err
 
 
 module load anaconda

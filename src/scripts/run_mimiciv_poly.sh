@@ -5,15 +5,15 @@ export CUDA_VISIBLE_DEVICES=0
 
 # --- poly gating noise--- #
 # for task in "ihm-48-cxr-notes-ecg 2 f1" "los-48-cxr-notes-ecg 2 f1" "pheno-all-cxr-notes-ecg 25 macro_f1"; do
-for seed in 0; do
+for seed in 12; do
   for pair1 in "ihm-48-cxr-notes-ecg 2 f1"; do
     read task num_labels primary_metric <<< "$pair1"
     for router in joint permod; do
       for power in 2 4 6 8; do
-        for pair2 in "3 2" "4 2"; do
+        for pair2 in "4 2"; do
           read experts top_k <<< "$pair2"
           for noisy in True; do
-            for normalized in True; do
+            for normalized in True False; do
               echo "Running gating=poly, normalized=$normalized, seed=$seed, poly_power=$power, router_type=$router, num_experts=$experts, top_k=$top_k, noisy_gating=$noisy, task=$task"
               python -W ignore main_mimiciv.py \
                 --num_train_epochs 8 \
@@ -31,7 +31,7 @@ for seed in 0; do
                 --num_of_notes 5 \
                 --max_length 1024 \
                 --layers 3 \
-                --output_dir "../run_folder/week3/run_mimiciv_poly/TS_CXR_Text" \
+                --output_dir "../../run_folder/week3/run_mimiciv_poly/TS_CXR_Text" \
                 --embed_dim 128 \
                 --num_modalities 3 \
                 --model_name "bioLongformer" \

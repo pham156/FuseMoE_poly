@@ -55,6 +55,7 @@ def main():
         project="polymoe_test",
         name=run_name,
         config=vars(args),
+        dir="../../wandb"
     )
 
 
