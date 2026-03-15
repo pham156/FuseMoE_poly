@@ -6,15 +6,16 @@ export CUDA_VISIBLE_DEVICES=0
 # --- poly gating noise--- #
 # for task in "ihm-48-cxr-notes-ecg 2 f1" "los-48-cxr-notes-ecg 2 f1" "pheno-all-cxr-notes-ecg 25 macro_f1"; do
 
-for seed in 42; do
+for seed in 0; do
   for pair1 in "pheno-all-cxr-notes-ecg 25 macro_f1"; do
     read task num_labels primary_metric <<< "$pair1"
-    for router in "permod"; do
-      for power in 6 8; do
-        for pair2 in "8 4"; do
+    for router in "joint"; do
+      for power in 6; do
+        for pair2 in "4 2"; do
           read experts top_k <<< "$pair2"
-          for pair3 in "True False False"; do
+          for pair3 in "True True False" "True False False"; do
             read noisy normalized use_bias <<< "$pair3"
+            for shared_experts in 0 1; do
             echo "Running gating=poly, normalized=$normalized, use_bias=$use_bias, seed=$seed, poly_power=$power, router_type=$router, num_experts=$experts, top_k=$top_k, noisy_gating=$noisy, task=$task"
             python -W ignore main_mimiciv.py \
               --num_train_epochs 8 \
@@ -53,7 +54,6 @@ for seed in 42; do
               --cross_method "moe" \
               --gating_function "poly" \
               --poly_power "$power" \
-              --poly_powers 2 \
               --num_of_experts "$experts" \
               --top_k "$top_k" \
               --disjoint_top_k "$top_k" \

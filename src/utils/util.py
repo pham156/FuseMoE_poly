@@ -1,3 +1,4 @@
+from email import parser
 import os
 import sys
 sys.path.insert(0, '../')
@@ -155,12 +156,7 @@ def parse_args():
     parser.add_argument("--hidden_size", default=512, type=int, help="hidden size of MLP second layer")
     parser.add_argument("--gating_function", nargs='*', type=str, help="all gating functions: softmax, laplace, gaussian, enter at least one")
     parser.add_argument("--poly_power", default=None, type=float, help="power of polynomial gating")
-    parser.add_argument(
-        "--poly_powers",
-        type=int,
-        nargs="+",
-        default=[2],
-    )
+    # parser.add_argument("--poly_powers", type=int, nargs="+", default=[2], help="powers of polynomial gating, only used when gating_function includes 'polynomial'")
 
     parser.add_argument("--student_degree", default=None, type=float, help="degree of student-t gating")
 
@@ -174,6 +170,8 @@ def parse_args():
     parser.add_argument("--balance_loss_coef", default=0.01, type=float, help="Coefficient for balance_loss term in total loss")
     parser.add_argument("--noisy_gating", type=str2bool, default=True, help="Enable or disable noisy gating (True/False).")
     parser.add_argument("--normalized", type=str2bool, default=True, help="Enable or disable normalization (True/False).")
+    parser.add_argument('--use_bias', type=str2bool, default=False, help='Add a learnable bias per expert in polynomial/student‑t gating')
+    parser.add_argument('--shared_experts', type=int, default=0, help='Number of shared experts (always active). Default 0 = no shared experts.')
 
     args = parser.parse_args()
     return args

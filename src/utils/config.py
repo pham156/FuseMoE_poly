@@ -45,6 +45,8 @@ class MoEConfig:
         poly_powers = 2,
         student_degree = 0.5,
         normalized = True,
+        use_bias = False,
+        shared_experts = 0
     ):
         # Input
         self.vocab_size = vocab_size
@@ -65,10 +67,12 @@ class MoEConfig:
         self.num_modalities = num_modalities
         self.gating = gating
         self.poly_power = poly_power
-        self.poly_powers = poly_powers
+        # self.poly_powers = poly_powers
         self.student_degree = student_degree
         self.normalized = normalized
-
+        self.use_bias = use_bias
+        self.shared_experts = shared_experts
+        
         # image
         self.image_size = image_size
         self.patch_size = patch_size

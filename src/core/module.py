@@ -589,9 +589,13 @@ class TransformerCrossEncoderLayer(nn.Module):
             num_modalities=args.num_modalities,
             gating=args.gating_function[0],
             poly_power = args.poly_power,
-            poly_powers= args.poly_powers,
             student_degree = args.student_degree,
-            noisy_gating = args.noisy_gating)
+            noisy_gating = args.noisy_gating,
+            normalized = args.normalized,
+            use_bias=args.use_bias,
+            shared_experts=args.shared_experts
+            )
+            
             self.moe = MoE(moe_config)
             self.moe = self.moe.to('cuda:0')
         elif args.cross_method == 'hme':
@@ -606,7 +610,11 @@ class TransformerCrossEncoderLayer(nn.Module):
             gating=args.gating_function,
             poly_power = args.poly_power,
             student_degree = args.student_degree,
-            noisy_gating = args.noisy_gating)
+            noisy_gating = args.noisy_gating,
+            normalized = args.normalized,
+            use_bias=args.use_bias,
+            shared_experts=args.shared_experts
+            )
 
             self.moe = HierarchicalMoE(moe_config)
             self.moe = self.moe.to('cuda:0')

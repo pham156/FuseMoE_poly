@@ -21,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --primary_metric) PRIMARY_METRIC="$2"; shift 2 ;;
     --experts) EXPERTS="$2"; shift 2 ;;
     --top_k) TOP_K="$2"; shift 2 ;;
+    --shared_experts) SHARED_EXPERTS="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -30,7 +31,7 @@ cd /home/pham156/MoE/FuseMoE_poly/src/scripts
 # Loop over powers inside the job
 for ROUTER in "joint" "permod"; do
   for GATING in "gaussian" "softmax" "laplace"; do
-    echo "Running gating=$GATING, seed=$SEED, poly_power=$power, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, noisy_gating=True, task=$TASK"
+    echo "Running gating=$GATING, seed=$SEED, shared_experts=$SHARED_EXPERTS, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, noisy_gating=True, task=$TASK"
 
     python -W ignore main_mimiciv.py \
       --num_train_epochs 8 \
@@ -77,9 +78,10 @@ for ROUTER in "joint" "permod"; do
       --reg_ts \
       --use_balance_loss \
       --balance_loss_coef 0.01 \
-      --noisy_gating True
+      --noisy_gating True \
+      --shared_experts "$SHARED_EXPERTS"
 
-    echo "Finished gating=$GATING, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, noisy_gating=True, task=$TASK"
+    echo "Finished gating=$GATING, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, shared_experts=$SHARED_EXPERTS, noisy_gating=True, task=$TASK"
     echo "---------------------------------------------"
   done
 done
