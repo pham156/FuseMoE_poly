@@ -3,13 +3,15 @@ import pickle
 import warnings
 import numpy as np
 import torch
-import wandb
+# import wandb
 import copy
 
 from utils.checkpoint import *
 from utils.util import *
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, f1_score
+# from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, f1_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, f1_score, accuracy_score
+from sklearn.preprocessing import label_binarize
 
 # def eval_test(args, model, test_data_loader, device):
 #     model.eval()
@@ -69,6 +71,7 @@ def trainer_irg(
     pretrain_epoch=None,
     writer=None,
     scheduler=None,
+    dataset="mimic",
 ):
     count = 0
     global_step = 0
@@ -81,7 +84,7 @@ def trainer_irg(
 
     for epoch in tqdm(range(args.num_train_epochs)):
         model.train()
-        if "Text" in args.modeltype:
+        if dataset == "mimic" and "Text" in args.modeltype:
             if (
                 args.num_update_bert_epochs < args.num_train_epochs
                 and (epoch) % args.num_update_bert_epochs == 0
@@ -111,129 +114,142 @@ def trainer_irg(
                 continue
             global_step += 1
 
-            (
-                ts_input_sequences,
-                ts_mask_sequences,
-                ts_tt,
-                reg_ts,
-                input_ids_sequences,
-                attn_mask_sequences,
-                text_emb,
-                note_time,
-                note_time_mask,
-                cxr_feats,
-                cxr_time,
-                cxr_time_mask,
-                ecg_feats,
-                ecg_time,
-                ecg_time_mask,
-                label,
-                cxr_missing,
-                text_missing,
-                ecg_missing,
-            ) = batch
+            if dataset == "pam":
+                # PAM data format: (modality_list, labels)
+                modality_list, labels = batch
+                # Move to device
+                modality_list = [mod.to(device) for mod in modality_list]
+                labels = labels.to(device)
+                result = model(modality_list, labels=labels)
+                if isinstance(result, tuple):
+                    loss, balance_loss = result
+                else:
+                    loss = result
+                    balance_loss = None
+            else:
+                (
+                    ts_input_sequences,
+                    ts_mask_sequences,
+                    ts_tt,
+                    reg_ts,
+                    input_ids_sequences,
+                    attn_mask_sequences,
+                    text_emb,
+                    note_time,
+                    note_time_mask,
+                    cxr_feats,
+                    cxr_time,
+                    cxr_time_mask,
+                    ecg_feats,
+                    ecg_time,
+                    ecg_time_mask,
+                    label,
+                    cxr_missing,
+                    text_missing,
+                    ecg_missing,
+                ) = batch
 
-            if args.modeltype == "TS_Text":
-                result = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    labels=label,
-                    reg_ts=reg_ts,
-                )
-                if isinstance(result, tuple):
-                    loss, balance_loss = result
-                else:
-                    loss = result
+                if args.modeltype == "TS_Text":
+                    result = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        labels=label,
+                        reg_ts=reg_ts,
+                    )
+                    if isinstance(result, tuple):
+                        loss, balance_loss = result
+                    else:
+                        loss = result
+                        balance_loss = None
+                elif args.modeltype == "TS_CXR":
+                    result = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        labels=label,
+                        reg_ts=reg_ts,
+                    )
+                    if isinstance(result, tuple):
+                        loss, balance_loss = result
+                    else:
+                        loss = result
+                        balance_loss = None
+                elif args.modeltype == "TS_CXR_Text":
+                    result = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        labels=label,
+                        reg_ts=reg_ts,
+                        cxr_missing=cxr_missing,
+                        text_missing=text_missing,
+                    )
+                    if isinstance(result, tuple):
+                        loss, balance_loss = result
+                    else:
+                        loss = result
+                        balance_loss = None
+                elif args.modeltype == "TS_CXR_Text_ECG":
+                    result = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        ecg_feats=ecg_feats,
+                        ecg_time=ecg_time,
+                        ecg_time_mask=ecg_time_mask,
+                        labels=label,
+                        reg_ts=reg_ts,
+                        cxr_missing=cxr_missing,
+                        text_missing=text_missing,
+                        ecg_missing=ecg_missing,
+                    )
+                    if isinstance(result, tuple):
+                        loss, balance_loss = result
+                    else:
+                        loss = result
+                        balance_loss = None
+                elif args.modeltype == "TS":
+                    loss = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        labels=label,
+                        reg_ts=reg_ts,
+                    )
                     balance_loss = None
-            elif args.modeltype == "TS_CXR":
-                result = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    labels=label,
-                    reg_ts=reg_ts,
-                )
-                if isinstance(result, tuple):
-                    loss, balance_loss = result
-                else:
-                    loss = result
+                elif args.modeltype == "Text":
+                    loss = model(
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        labels=label,
+                    )
                     balance_loss = None
-            elif args.modeltype == "TS_CXR_Text":
-                result = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    labels=label,
-                    reg_ts=reg_ts,
-                    cxr_missing=cxr_missing,
-                    text_missing=text_missing,
-                )
-                if isinstance(result, tuple):
-                    loss, balance_loss = result
-                else:
-                    loss = result
-                    balance_loss = None
-            elif args.modeltype == "TS_CXR_Text_ECG":
-                result = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    ecg_feats=ecg_feats,
-                    ecg_time=ecg_time,
-                    ecg_time_mask=ecg_time_mask,
-                    labels=label,
-                    reg_ts=reg_ts,
-                    cxr_missing=cxr_missing,
-                    text_missing=text_missing,
-                    ecg_missing=ecg_missing,
-                )
-                if isinstance(result, tuple):
-                    loss, balance_loss = result
-                else:
-                    loss = result
-                    balance_loss = None
-            elif args.modeltype == "TS":
-                loss = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    labels=label,
-                    reg_ts=reg_ts,
-                )
-                balance_loss = None
-            elif args.modeltype == "Text":
-                loss = model(
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    labels=label,
-                )
-                balance_loss = None
 
             if loss is None:
                 warnings.warn("loss is None!")
@@ -283,13 +299,13 @@ def trainer_irg(
                         log_dict[f"train/lr_group_{i}"] = lr
             except Exception:
                 pass
-            wandb.log(log_dict)
+            # wandb.log(log_dict)
 
         if none_count > 0:
             print("none_count", none_count)
 
         # --- Evaluate on dev set ---
-        eval_vals = evaluate_irg(args, device, dev_dataloader, model)
+        eval_vals = evaluate_irg(args, device, dev_dataloader, model, dataset=dataset)
         for k, v in eval_vals.items():
             if k == "auc_scores":
                 continue
@@ -304,7 +320,7 @@ def trainer_irg(
             print("Best " + k, best_eval)
 
             # wandb logging for dev metrics and best-so-far
-            wandb.log({f"dev/{k}": v, f"dev/best_{k}": best_eval, "epoch": epoch + 1})
+            # wandb.log({f"dev/{k}": v, f"dev/best_{k}": best_eval, "epoch": epoch + 1})
         
         if primary_metric in eval_vals:
             current_score = eval_vals[primary_metric]
@@ -319,7 +335,7 @@ def trainer_irg(
 
 
 
-def evaluate_irg(args, device, data_loader, model, mode=None):
+def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
     model.eval()
     eval_logits = []
     eval_example = []
@@ -336,101 +352,119 @@ def evaluate_irg(args, device, data_loader, model, mode=None):
         if batch is None:
             none_count += 1
             continue
-        (
-            ts_input_sequences,
-            ts_mask_sequences,
-            ts_tt,
-            reg_ts,
-            input_ids_sequences,
-            attn_mask_sequences,
-            text_emb,
-            note_time,
-            note_time_mask,
-            cxr_feats,
-            cxr_time,
-            cxr_time_mask,
-            ecg_feats,
-            ecg_time,
-            ecg_time_mask,
-            label,
-            cxr_missing,
-            text_missing,
-            ecg_missing,
-        ) = batch
-        with torch.no_grad():
-            if args.modeltype == "TS_Text":
-                logits = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    reg_ts=reg_ts,
-                )
-            elif args.modeltype == "TS_CXR":
-                logits = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    reg_ts=reg_ts,
-                )
-            elif args.modeltype == "TS_CXR_Text":
-                logits = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    reg_ts=reg_ts,
-                    cxr_missing=cxr_missing,
-                    text_missing=text_missing,
-                )
-            elif args.modeltype == "TS_CXR_Text_ECG":
-                logits = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                    note_time_list=note_time,
-                    note_time_mask_list=note_time_mask,
-                    cxr_feats=cxr_feats,
-                    cxr_time=cxr_time,
-                    cxr_time_mask=cxr_time_mask,
-                    ecg_feats=ecg_feats,
-                    ecg_time=ecg_time,
-                    ecg_time_mask=ecg_time_mask,
-                    reg_ts=reg_ts,
-                    cxr_missing=cxr_missing,
-                    text_missing=text_missing,
-                    ecg_missing=ecg_missing,
-                )
-            elif args.modeltype == "TS":
-                logits = model(
-                    x_ts=ts_input_sequences,
-                    x_ts_mask=ts_mask_sequences,
-                    ts_tt_list=ts_tt,
-                    reg_ts=reg_ts,
-                )
-            elif args.modeltype == "Text":
-                logits = model(
-                    input_ids_sequences=input_ids_sequences,
-                    attn_mask_sequences=attn_mask_sequences,
-                    text_emb=text_emb,
-                )
+
+        if dataset == "pam":
+            modality_list, labels = batch
+            modality_list = [mod.to(device) for mod in modality_list]
+            labels = labels.to(device)
+            with torch.no_grad():
+                logits = model(modality_list)
+            if logits is None:
+                warnings.warn("logits is None!")
+                continue
+            if torch.isnan(logits).any():
+                warnings.warn("logits is nan!")
+                continue
+            logits = logits.cpu().numpy()
+            label_ids = labels.cpu().numpy()
+            eval_logits += logits.tolist()
+            eval_example += label_ids.tolist()
+        else:
+            (
+                ts_input_sequences,
+                ts_mask_sequences,
+                ts_tt,
+                reg_ts,
+                input_ids_sequences,
+                attn_mask_sequences,
+                text_emb,
+                note_time,
+                note_time_mask,
+                cxr_feats,
+                cxr_time,
+                cxr_time_mask,
+                ecg_feats,
+                ecg_time,
+                ecg_time_mask,
+                label,
+                cxr_missing,
+                text_missing,
+                ecg_missing,
+            ) = batch
+            with torch.no_grad():
+                if args.modeltype == "TS_Text":
+                    logits = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        reg_ts=reg_ts,
+                    )
+                elif args.modeltype == "TS_CXR":
+                    logits = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        reg_ts=reg_ts,
+                    )
+                elif args.modeltype == "TS_CXR_Text":
+                    logits = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        reg_ts=reg_ts,
+                        cxr_missing=cxr_missing,
+                        text_missing=text_missing,
+                    )
+                elif args.modeltype == "TS_CXR_Text_ECG":
+                    logits = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                        note_time_list=note_time,
+                        note_time_mask_list=note_time_mask,
+                        cxr_feats=cxr_feats,
+                        cxr_time=cxr_time,
+                        cxr_time_mask=cxr_time_mask,
+                        ecg_feats=ecg_feats,
+                        ecg_time=ecg_time,
+                        ecg_time_mask=ecg_time_mask,
+                        reg_ts=reg_ts,
+                        cxr_missing=cxr_missing,
+                        text_missing=text_missing,
+                        ecg_missing=ecg_missing,
+                    )
+                elif args.modeltype == "TS":
+                    logits = model(
+                        x_ts=ts_input_sequences,
+                        x_ts_mask=ts_mask_sequences,
+                        ts_tt_list=ts_tt,
+                        reg_ts=reg_ts,
+                    )
+                elif args.modeltype == "Text":
+                    logits = model(
+                        input_ids_sequences=input_ids_sequences,
+                        attn_mask_sequences=attn_mask_sequences,
+                        text_emb=text_emb,
+                    )
 
             if logits is None:
                 warnings.warn("logits is None!")
@@ -452,7 +486,25 @@ def evaluate_irg(args, device, data_loader, model, mode=None):
     all_label = np.array(eval_example)
     all_pred = np.where(all_logits > 0.5, 1, 0)
 
-    if "pheno" in args.task:
+    if args.dataset == "pam":
+        # PAM: multiclass classification
+        # Softmax to get probabilities
+        exp_logits = np.exp(all_logits - np.max(all_logits, axis=1, keepdims=True))
+        all_probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+        all_pred = np.argmax(all_probs, axis=1)
+
+        n_classes = all_probs.shape[1]
+        y_onehot = label_binarize(all_label, classes=range(n_classes))
+
+        eval_vals["acc"] = accuracy_score(all_label, all_pred)
+        eval_vals["macro_f1"] = f1_score(all_label, all_pred, average='macro')
+        try:
+            eval_vals["auc_macro"] = roc_auc_score(y_onehot, all_probs, average='macro', multi_class='ovr')
+        except Exception as e:
+            print(f"Error computing AUC: {e}")
+            eval_vals["auc_macro"] = 0.0
+
+    elif "pheno" in args.task:
         eval_vals = metrics_multilabel(all_label, all_logits, verbose=0)
         eval_vals["macro_f1"] = f1_score(all_label, all_pred, average="macro")
 

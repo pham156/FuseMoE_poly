@@ -171,9 +171,6 @@ class MoE(nn.Module):
         self.poly_power = config.poly_power
         self.student_degree = config.student_degree
         self.normalized = config.normalized
-        self.use_bias = config.use_bias
-        self.shared_experts = config.shared_experts
-        self.use_temp = config.use_temp
 
         # instantiate experts
         if self.router_type == 'disjoint':
@@ -195,39 +192,6 @@ class MoE(nn.Module):
         else:
             self.experts = nn.ModuleList([MLP(config, self.input_size, self.output_size, self.hidden_size) for _ in range(self.num_experts)])
         
-        if self.use_bias:
-            if self.router_type == 'joint':
-                self.bias = nn.Parameter(torch.zeros(self.num_experts))
-            elif self.router_type == 'permod':
-                # Each modality has its own set of experts (num_experts per modality)
-                self.bias = nn.ParameterList([nn.Parameter(torch.zeros(self.num_experts)) for _ in range(self.num_modalities)])
-            elif self.router_type == 'disjoint':
-                sub_experts = self.num_experts // self.num_modalities
-                self.bias = nn.ParameterList([nn.Parameter(torch.zeros(sub_experts)) for _ in range(self.num_modalities)])
-            else:
-                self.bias = None
-        else:
-            self.bias = None
-        
-        if self.shared_experts > 0:
-            # Shared experts operate on the original input (before dispatching)
-            self.shared_mlps = nn.ModuleList([
-                MLP(config, self.input_size, self.output_size, self.hidden_size)
-                for _ in range(self.shared_experts)
-            ])
-            if self.normalized:
-                self.omega = nn.Parameter(torch.zeros(self.shared_experts))   # passed through softmax
-            else:
-                self.omega = nn.Parameter(torch.ones(self.shared_experts)) 
-        else:
-            self.shared_mlps = None
-            self.omega = None
-
-        if self.use_temp:
-            self.log_tau = nn.Parameter(torch.zeros(1))  # log of temperature parameter for softmax gating
-        else:
-            self.log_tau = None
-
         self.softplus = nn.Softplus()
         self.softmax = nn.Softmax(1)
         self.register_buffer("mean", torch.tensor([0.0]))
@@ -300,27 +264,12 @@ class MoE(nn.Module):
         return prob
 
     def _get_logits(self, x, train, noise_epsilon, idx=None):
-        bias = None
         if idx is not None:
             w_gate = self.w_gate[idx].to(x.device)
             w_noise = self.w_noise[idx].to(x.device)
-            if self.use_bias and self.bias is not None:
-                if self.router_type in ['permod', 'disjoint']:
-                    bias = self.bias[idx]
-                else:
-                    bias = self.bias
         else:
             w_gate = self.w_gate
             w_noise = self.w_noise
-            if self.use_bias and self.bias is not None:
-                bias = self.bias
-
-        if self.use_temp and self.log_tau is not None:
-            temp = self.log_tau.exp()
-        else:
-            temp = None
-
-        # ---------- Compute clean logits ----------
         if self.gating == 'softmax':
             clean_logits = x @ w_gate
         elif self.gating == 'laplace':
@@ -333,67 +282,31 @@ class MoE(nn.Module):
         elif self.gating == "student_t":
             dist = torch.cdist(x, torch.t(w_gate))
             clean_logits = 1.0 / ((1.0 + ((dist)**2)/self.student_degree)**((self.student_degree + 1)/2))
-        elif self.gating == "sigmoid":
-            raw = x @ w_gate
-            if temp is not None:
-                raw = raw / temp
-            clean_logits = torch.sigmoid(raw)
-        elif self.gating == "sigmoid_dist":
-            dist = torch.cdist(x, torch.t(w_gate))
-            if temp is not None:
-                dist = dist / temp
-            clean_logits = torch.sigmoid(-dist)
 
-        # ---------- Noisy gating ----------
         if self.noisy_gating:
+            # print("executing_noise")
             raw_noise_stddev = x @ w_noise
             noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon) * train)
-
             if self.gating == 'poly':
                 dist = torch.cdist(x, torch.t(w_gate))
-                noise = torch.randn_like(dist) * noise_stddev
-                noisy_dist = dist + noise
+                noise = torch.randn_like(dist) * noise_stddev       
+                noisy_dist = dist + noise                           
                 noisy_logits = 1.0 / (1.0 + noisy_dist.pow(self.poly_power))
                 logits = noisy_logits
             elif self.gating == "student_t":
                 dist = torch.cdist(x, torch.t(w_gate))
-                noise = torch.randn_like(dist) * noise_stddev
-                noisy_dist = dist + noise
+                noise = torch.randn_like(dist) * noise_stddev       
+                noisy_dist = dist + noise   
                 noisy_logits = 1.0 / ((1.0 + ((noisy_dist)**2)/self.student_degree)**((self.student_degree + 1)/2))
-                logits = noisy_logits
-            elif self.gating == "sigmoid":
-                score = x @ w_gate
-                noise = torch.randn_like(score) * noise_stddev
-                noisy_score = score + noise
-                if temp is not None:
-                    noisy_score = noisy_score / temp
-                noisy_logits = torch.sigmoid(noisy_score)
-                logits = noisy_logits
-            elif self.gating == "sigmoid_dist":
-                dist = torch.cdist(x, torch.t(w_gate))
-                noise = torch.randn_like(-dist) * noise_stddev
-                noisy_dist = dist + noise
-                if temp is not None:
-                    noisy_dist = noisy_dist / temp
-                noisy_logits = torch.sigmoid(noisy_dist)
                 logits = noisy_logits
             else:
                 noise = torch.randn_like(clean_logits) * noise_stddev
                 noisy_logits = clean_logits + noise
-                if temp is not None:
-                    noisy_logits = noisy_logits / temp
                 logits = noisy_logits
         else:
             noise_stddev = torch.zeros_like(clean_logits)
             noisy_logits = clean_logits
             logits = clean_logits
-
-        if bias is not None:
-            # print("Applying bias to logits")
-            logits = logits * torch.exp(bias)
-            clean_logits = clean_logits * torch.exp(bias)
-            noisy_logits = noisy_logits * torch.exp(bias)
-
         return logits, clean_logits, noisy_logits, noise_stddev
 
     def _top_k_gating(self, logits, clean_logits, noisy_logits, noise_stddev, k):
@@ -401,17 +314,10 @@ class MoE(nn.Module):
         top_k_logits = top_logits[:, :k]
         top_k_indices = top_indices[:, :k]
         if self.gating == 'softmax':
-            if self.normalized:
-                top_k_gates = self.softmax(top_k_logits)
-            else:
-                top_k_gates = torch.exp(top_k_logits)
+            top_k_gates = self.softmax(top_k_logits)
         elif self.gating == 'laplace' or self.gating == 'gaussian':
-            if self.normalized:
-                top_k_gates = torch.exp(top_k_logits - torch.logsumexp(top_k_logits, dim=1, keepdim=True))
-            else:
-                top_k_gates = torch.exp(top_k_logits)
-            
-        elif self.gating == 'poly' or self.gating == "student_t" or self.gating == "sigmoid" or self.gating == "sigmoid_dist":
+            top_k_gates = torch.exp(top_k_logits - torch.logsumexp(top_k_logits, dim=1, keepdim=True))
+        elif self.gating == 'poly' or self.gating == "student_t":
             if self.normalized:
                 top_k_gates = top_k_logits / top_k_logits.sum(dim=1, keepdim=True)
             else:
@@ -461,79 +367,39 @@ class MoE(nn.Module):
                 all_loads.append(load)
             return all_gates, all_loads
 
-
-    def _compute_loss(self, gates, loads, loss_coef):
-        """Compute load balancing loss across all gates."""
-        loss = 0
-        if isinstance(gates, list):
-            for g, l in zip(gates, loads):
-                loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
-        else:
-            loss = self.cv_squared(gates.sum(0)) + self.cv_squared(loads)
-        return loss * loss_coef
-
-
-    def _compute_shared_output(self, x):
-        """Compute output from shared experts, if any."""
-        if self.shared_mlps is None:
-            return None
-
-        if self.normalized:
-            log_omega = torch.log_softmax(self.omega, dim=0)
-        else:
-            log_omega = torch.log(torch.nn.functional.softplus(self.omega) + 1e-12)
-
-        out = self.shared_mlps[0](x) + log_omega[0]
-        for i, se in enumerate(self.shared_mlps[1:], 1):
-            out = torch.logaddexp(out, se(x) + log_omega[i])
-        return out
-
-
-    def _compute_routed_output(self, x, gates, modality_idx=None):
-        """Compute routed expert output for a single modality or joint input."""
-        if self.router_type == 'disjoint':
-            sub_experts = self.num_experts // self.num_modalities
-            dispatcher = SparseDispatcher(sub_experts, gates, self.router_type)
-            expert_inputs = dispatcher.dispatch(x)
-            expert_outputs = [self.experts[modality_idx][i](expert_inputs[i]) for i in range(sub_experts)]
-        elif self.router_type == 'permod':
-            dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
-            expert_inputs = dispatcher.dispatch(x)
-            expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
-        else:  # joint
-            dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
-            expert_inputs = dispatcher.dispatch(x)
-            expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
-        return dispatcher.combine(expert_outputs)
-
-
-    def _combine_shared_and_routed(self, routed_out, shared_out):
-        """Combine shared and routed outputs as a mixture within a modality."""
-        if shared_out is None:
-            return routed_out
-        out = torch.logaddexp(routed_out, shared_out)
-        if self.normalized:
-            out = out - np.log(2)  # normalize by number of components in the mixture
-        return out
-
     def forward(self, x, train=True, loss_coef=1e-2, modalities=None):
+        """Args:
+        x: tensor shape [batch_size, input_size]
+        gating: type of gating function
+        train: a boolean scalar.
+        loss_coef: a scalar - multiplier on load-balancing losses
+        Returns:
+        y: a tensor with shape [batch_size, output_size].
+        extra_training_loss: a scalar.  This should be added into the overall
+        training loss of the model.  The backpropagation of this loss
+        encourages all experts to be approximately equally used across a batch.
+        """
         gates, load = self.noisy_top_k_gating(x, train, modalities=modalities)
-        loss = self._compute_loss(gates, load, loss_coef)
-
-        # global shared output: always computed once on full input
-        joint_x = torch.cat(x, dim=1) if isinstance(x, list) else x
-        shared_out = self._compute_shared_output(joint_x)
-
+        # calculate importance loss
         if isinstance(gates, list):
-            # permod or disjoint
-            y = 0
+            loss, y, sub_experts = 0, 0, self.num_experts//self.num_modalities
+            for g, l in zip(gates, load):
+                loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
+            loss *= loss_coef
             for j, g in enumerate(gates):
-                routed_out = self._compute_routed_output(x[j], g, modality_idx=j)
-                y += routed_out
-            y = self._combine_shared_and_routed(y, shared_out)
+                dispatcher = SparseDispatcher(self.num_experts, g, self.router_type)
+                expert_inputs = dispatcher.dispatch(x[j])
+                if self.router_type == 'permod':
+                    expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+                elif self.router_type == 'disjoint':
+                    expert_outputs = [self.experts[j][i](expert_inputs[i]) for i in range(sub_experts)]
+                y += dispatcher.combine(expert_outputs)
         else:
-            # joint
-            routed_out = self._compute_routed_output(joint_x, gates)
-            y = self._combine_shared_and_routed(routed_out, shared_out)
-
+            loss = self.cv_squared(gates.sum(0)) + self.cv_squared(load)
+            loss *= loss_coef
+            dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
+            expert_inputs = dispatcher.dispatch(x)
+            # gates = dispatcher.expert_to_gates() # how is this line be used?
+            expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+            y = dispatcher.combine(expert_outputs)
         return y, loss

@@ -42,11 +42,11 @@ class MoEConfig:
         use_return_dict=True,
         is_decoder=False,
         poly_power = 2,
-        poly_powers = 2,
         student_degree = 0.5,
         normalized = True,
         use_bias = False,
-        shared_experts = 0
+        shared_experts = 0,
+        use_temp = False
     ):
         # Input
         self.vocab_size = vocab_size
@@ -72,6 +72,7 @@ class MoEConfig:
         self.normalized = normalized
         self.use_bias = use_bias
         self.shared_experts = shared_experts
+        self.use_temp = use_temp
         
         # image
         self.image_size = image_size

@@ -53,15 +53,17 @@ def parse_args():
     parser.add_argument("--mode", type=str, default="train", help="train/test")
     parser.add_argument("--modeltype", type=str, default="TS_Text", help="TS, Text or TS_Text")
     parser.add_argument("--eval_score", default=['auc', 'auprc', 'f1'], type=list)
-    parser.add_argument("--primary_metric", type=str, default="f1", choices=["auc", "auprc", "f1", "macro_f1"], help="Metric used to select the best validation model")
+    parser.add_argument("--primary_metric", type=str, default="f1", choices=["auc", "auprc", "f1", "macro_f1", "acc"], help="Metric used to select the best validation model")
 
-
+    parser.add_argument("--dataset", type=str, default="mimic", choices=["mimic", "pam"], help="Choose dataset: mimic (original MIMIC) or pam (PAMAP2)")
     parser.add_argument('--num_labels', type=int, default=2)
     parser.add_argument("--max_length", type=int, default=128, help=(
             "The maximum total input sequence length after tokenization. Sequences longer than this will be truncated," " sequences shorter will be padded if `--pad_to_max_lengh` is passed."),)
     parser.add_argument( "--pad_to_max_length", action="store_true", help="If passed, pad all samples to `max_length`. Otherwise, dynamic padding is used.", )
     parser.add_argument( "--model_path", type=str, help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
+    parser.add_argument("--train_sample_ratio", type=float, default=1.0,
+                    help="Fraction of training data to use (0 < ratio <= 1)")
     parser.add_argument(
         "--train_batch_size",
         type=int,
@@ -172,6 +174,7 @@ def parse_args():
     parser.add_argument("--normalized", type=str2bool, default=True, help="Enable or disable normalization (True/False).")
     parser.add_argument('--use_bias', type=str2bool, default=False, help='Add a learnable bias per expert in polynomial/student‑t gating')
     parser.add_argument('--shared_experts', type=int, default=0, help='Number of shared experts (always active). Default 0 = no shared experts.')
+    parser.add_argument('--use_temp', type=str2bool, default=False, help='Temperature parameter for softmax gating function.')
 
     args = parser.parse_args()
     return args

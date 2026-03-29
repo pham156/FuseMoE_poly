@@ -517,6 +517,77 @@ class MULTCrossModel(nn.Module):
                 return task_loss, balance_loss
             return torch.nn.functional.sigmoid(output)
 
+class FlexiModalMULTCrossModel(nn.Module):
+    """
+    Model for PAMAP2 that accepts a list of modality tensors.
+    Uses the same cross encoder and final layers as the original MULTCrossModel.
+    """
+    def __init__(self, args, device, modality_dims):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.num_modalities = len(modality_dims)
+        self.d_model = args.embed_dim
+        self.dropout = args.dropout
+        self.cross_method = args.cross_method
+
+        # Project each modality to d_model
+        self.modality_proj = nn.ModuleList([
+            nn.Linear(dim, self.d_model) for dim in modality_dims
+        ])
+
+        # Cross encoder (same as in original)
+        self.trans_self_cross_ts_txt = self._get_cross_network(args)
+
+        # Final layers
+        total_dim = self.d_model * self.num_modalities
+        self.proj1 = nn.Linear(total_dim, total_dim)
+        self.proj2 = nn.Linear(total_dim, total_dim)
+        self.out_layer = nn.Linear(total_dim, args.num_labels)
+        self.loss_fct = nn.CrossEntropyLoss()
+
+    def _get_cross_network(self, args):
+        from core.module import TransformerCrossEncoder
+        return TransformerCrossEncoder(
+            args=args,
+            embed_dim=self.d_model,
+            num_heads=args.num_heads,
+            layers=args.cross_layers,
+            device=self.device,
+            attn_dropout=self.dropout,
+            relu_dropout=self.dropout,
+            res_dropout=self.dropout,
+            embed_dropout=self.dropout,
+            attn_mask=False,
+            q_seq_len_1=args.tt_max,
+            num_modalities=self.num_modalities
+        )
+
+    def forward(self, modality_list, labels=None):
+        B, T = modality_list[0].shape[:2]
+
+        # projected = [proj(mod) for proj, mod in zip(self.modality_proj, modality_list)]
+        projected = []
+        for proj, mod in zip(self.modality_proj, modality_list):
+            x = proj(mod)                     # (B, T, d_model)
+            x = x.permute(1, 0, 2)           # (T, B, d_model)
+            projected.append(x)
+
+        hiddens, balance_loss = self.trans_self_cross_ts_txt(
+            projected, [f"mod_{i}" for i in range(self.num_modalities)]
+        )
+        last_hs = torch.cat([hid[-1] for hid in hiddens], dim=1)
+
+        out = F.relu(self.proj1(last_hs))
+        out = F.dropout(out, p=self.dropout, training=self.training)
+        out = self.proj2(out) + last_hs
+        logits = self.out_layer(out)
+
+        if labels is not None:
+            loss = self.loss_fct(logits, labels)
+            return loss, balance_loss
+        else:
+            return logits
 
 class TSMixed(nn.Module):
     def __init__(self,args,device,modeltype=None,orig_d_ts=None,orig_reg_d_ts=None,ts_seq_num=None):

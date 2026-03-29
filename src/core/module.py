@@ -593,7 +593,8 @@ class TransformerCrossEncoderLayer(nn.Module):
             noisy_gating = args.noisy_gating,
             normalized = args.normalized,
             use_bias=args.use_bias,
-            shared_experts=args.shared_experts
+            shared_experts=args.shared_experts,
+            use_temp=args.use_temp
             )
             
             self.moe = MoE(moe_config)
@@ -613,7 +614,8 @@ class TransformerCrossEncoderLayer(nn.Module):
             noisy_gating = args.noisy_gating,
             normalized = args.normalized,
             use_bias=args.use_bias,
-            shared_experts=args.shared_experts
+            shared_experts=args.shared_experts,
+            use_temp=args.use_temp
             )
 
             self.moe = HierarchicalMoE(moe_config)
