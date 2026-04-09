@@ -115,8 +115,12 @@ def trainer_irg(
             global_step += 1
 
             if dataset == "pam":
-                # PAM data format: (modality_list, labels)
-                modality_list, labels = batch
+                # PAM data format can be (modality_list, labels) or
+                # (modality_list, labels, subject_ids) for subject-wise evaluation.
+                if len(batch) == 3:
+                    modality_list, labels, _ = batch
+                else:
+                    modality_list, labels = batch
                 # Move to device
                 modality_list = [mod.to(device) for mod in modality_list]
                 labels = labels.to(device)
@@ -339,6 +343,7 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
     model.eval()
     eval_logits = []
     eval_example = []
+    eval_subjects = []
     none_count = 0
     total = len(data_loader)
     for idx, batch in enumerate(
@@ -354,7 +359,11 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
             continue
 
         if dataset == "pam":
-            modality_list, labels = batch
+            if len(batch) == 3:
+                modality_list, labels, subject_ids = batch
+            else:
+                modality_list, labels = batch
+                subject_ids = None
             modality_list = [mod.to(device) for mod in modality_list]
             labels = labels.to(device)
             with torch.no_grad():
@@ -369,6 +378,8 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
             label_ids = labels.cpu().numpy()
             eval_logits += logits.tolist()
             eval_example += label_ids.tolist()
+            if subject_ids is not None:
+                eval_subjects += subject_ids.cpu().numpy().tolist()
         else:
             (
                 ts_input_sequences,
@@ -503,6 +514,16 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
         except Exception as e:
             print(f"Error computing AUC: {e}")
             eval_vals["auc_macro"] = 0.0
+
+        if mode == "test" and len(eval_subjects) == len(all_label):
+            subject_ids = sorted(set(eval_subjects))
+            for subject_id in subject_ids:
+                subject_mask = np.array(eval_subjects) == subject_id
+                subject_labels = all_label[subject_mask]
+                subject_probs = all_probs[subject_mask]
+                subject_pred = np.argmax(subject_probs, axis=1)
+                eval_vals[f"subject_{subject_id}_acc"] = accuracy_score(subject_labels, subject_pred)
+                eval_vals[f"subject_{subject_id}_macro_f1"] = f1_score(subject_labels, subject_pred, average='macro')
 
     elif "pheno" in args.task:
         eval_vals = metrics_multilabel(all_label, all_logits, verbose=0)

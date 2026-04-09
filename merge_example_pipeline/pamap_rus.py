@@ -60,8 +60,8 @@ def preprocess_pamap_data(df):
     """Preprocesses the loaded PAMAP2 data, keeping all sensor columns."""
     print("Preprocessing data...")
     essential_cols = ['timestamp', 'activity_id']
-    sensor_cols = [col for col in df.columns if col not in essential_cols and 'orient' not in col]
-    # sensor_cols = [col for col in df.columns if col not in essential_cols]
+    # Keep quaternion orientation features to match the paper description.
+    sensor_cols = [col for col in df.columns if col not in essential_cols]
     if 'heart_rate' not in df.columns:
         sensor_cols.insert(0, 'heart_rate')
     relevant_cols = essential_cols + sensor_cols
@@ -284,4 +284,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

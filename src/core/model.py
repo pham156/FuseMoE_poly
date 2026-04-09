@@ -531,10 +531,37 @@ class FlexiModalMULTCrossModel(nn.Module):
         self.dropout = args.dropout
         self.cross_method = args.cross_method
 
-        # Project each modality to d_model
+        # Give each modality its own local temporal encoder before cross-modal fusion.
         self.modality_proj = nn.ModuleList([
-            nn.Linear(dim, self.d_model) for dim in modality_dims
+            nn.Conv1d(
+                dim,
+                self.d_model,
+                kernel_size=args.kernel_size,
+                padding=math.floor((args.kernel_size - 1) / 2),
+                bias=False,
+            )
+            for dim in modality_dims
         ])
+        self.modality_temporal = nn.ModuleList([
+            TransformerEncoder(
+                embed_dim=self.d_model,
+                num_heads=args.num_heads,
+                layers=args.layers,
+                device=self.device,
+                attn_dropout=self.dropout,
+                relu_dropout=self.dropout,
+                res_dropout=self.dropout,
+                embed_dropout=self.dropout,
+                attn_mask=False,
+                q_seq_len=args.tt_max,
+                kv_seq_len=None,
+            )
+            for _ in modality_dims
+        ])
+        self.modality_norm = nn.ModuleList([
+            nn.LayerNorm(self.d_model) for _ in modality_dims
+        ])
+        self.token_type_embeddings = nn.Embedding(self.num_modalities, self.d_model)
 
         # Cross encoder (same as in original)
         self.trans_self_cross_ts_txt = self._get_cross_network(args)
@@ -566,21 +593,25 @@ class FlexiModalMULTCrossModel(nn.Module):
     def forward(self, modality_list, labels=None):
         B, T = modality_list[0].shape[:2]
 
-        # projected = [proj(mod) for proj, mod in zip(self.modality_proj, modality_list)]
         projected = []
-        for proj, mod in zip(self.modality_proj, modality_list):
-            x = proj(mod)                     # (B, T, d_model)
-            x = x.permute(1, 0, 2)           # (T, B, d_model)
+        for mod_idx, (proj, temporal_encoder, norm, mod) in enumerate(
+            zip(self.modality_proj, self.modality_temporal, self.modality_norm, modality_list)
+        ):
+            x = proj(mod.transpose(1, 2)).transpose(1, 2)  # (B, T, d_model)
+            modality_ids = torch.full((B, T), mod_idx, dtype=torch.long, device=mod.device)
+            x = norm(x + self.token_type_embeddings(modality_ids))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = temporal_encoder(x.permute(1, 0, 2))
             projected.append(x)
 
         hiddens, balance_loss = self.trans_self_cross_ts_txt(
             projected, [f"mod_{i}" for i in range(self.num_modalities)]
         )
-        last_hs = torch.cat([hid[-1] for hid in hiddens], dim=1)
+        pooled_hs = torch.cat([hid.mean(dim=0) for hid in hiddens], dim=1)
 
-        out = F.relu(self.proj1(last_hs))
+        out = F.relu(self.proj1(pooled_hs))
         out = F.dropout(out, p=self.dropout, training=self.training)
-        out = self.proj2(out) + last_hs
+        out = self.proj2(out) + pooled_hs
         logits = self.out_layer(out)
 
         if labels is not None:
@@ -796,4 +827,3 @@ class TSMixed(nn.Module):
                 else:
                     return self.loss_fct1(output, labels)
             return torch.nn.functional.sigmoid(output)
-

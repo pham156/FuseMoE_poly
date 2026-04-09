@@ -598,7 +598,6 @@ class TransformerCrossEncoderLayer(nn.Module):
             )
             
             self.moe = MoE(moe_config)
-            self.moe = self.moe.to('cuda:0')
         elif args.cross_method == 'hme':
             moe_config = MoEConfig(
             num_experts=args.num_of_experts,
@@ -619,7 +618,6 @@ class TransformerCrossEncoderLayer(nn.Module):
             )
 
             self.moe = HierarchicalMoE(moe_config)
-            self.moe = self.moe.to('cuda:0')
         
     def forward(self, x_list, modality):
         """
@@ -783,5 +781,4 @@ def buffered_future_mask(tensor, tensor2=None):
     if tensor.is_cuda:
         future_mask = future_mask.cuda()
     return future_mask[:dim1, :dim2]
-
 

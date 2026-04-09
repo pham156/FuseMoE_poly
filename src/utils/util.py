@@ -56,6 +56,9 @@ def parse_args():
     parser.add_argument("--primary_metric", type=str, default="f1", choices=["auc", "auprc", "f1", "macro_f1", "acc"], help="Metric used to select the best validation model")
 
     parser.add_argument("--dataset", type=str, default="mimic", choices=["mimic", "pam"], help="Choose dataset: mimic (original MIMIC) or pam (PAMAP2)")
+    parser.add_argument("--pam_train_subjects", nargs='*', type=int, default=[1, 2, 3, 4, 5, 6], help="PAMAP2 subject IDs used for training")
+    parser.add_argument("--pam_val_subjects", nargs='*', type=int, default=[7], help="PAMAP2 subject IDs used for validation")
+    parser.add_argument("--pam_test_subjects", nargs='*', type=int, default=[8, 9], help="PAMAP2 subject IDs used for testing")
     parser.add_argument('--num_labels', type=int, default=2)
     parser.add_argument("--max_length", type=int, default=128, help=(
             "The maximum total input sequence length after tokenization. Sequences longer than this will be truncated," " sequences shorter will be padded if `--pad_to_max_lengh` is passed."),)
@@ -385,4 +388,3 @@ def merge_reg_irg(dataPath_reg, dataPath_irg):
 
     with open(dataPath_reg, 'wb') as f:
         pickle.dump(data_reg,f)
-

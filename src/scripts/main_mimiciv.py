@@ -34,41 +34,140 @@ class Struct(object):
 
 def get_pam_dataloaders(args):
     class PAMDataset(Dataset):
-        def __init__(self, pkl_path, seq_len):
-            with open(pkl_path, 'rb') as f:
-                self.data = pickle.load(f)
+        def __init__(self, data, seq_len):
+            self.data = data
             self.seq_len = seq_len
 
         def __len__(self):
             return len(self.data)
 
         def __getitem__(self, idx):
-            modality_list, label = self.data[idx]   # list of tensors, label
-            # For simplicity, we don't need masks/timestamps – the model will use linear projections.
-            # But if you want to keep compatibility, you can add dummy masks and timestamps.
-            # We'll return the list and the label.
+            item = self.data[idx]
+            if len(item) == 3:
+                modality_list, label, subject_id = item
+                return modality_list, label, subject_id
+            modality_list, label = item
             return modality_list, label
     
 
     def collate_fn(batch):
-        mod_lists, labels = zip(*batch)
+        has_subject_ids = len(batch[0]) == 3
+        if has_subject_ids:
+            mod_lists, labels, subject_ids = zip(*batch)
+        else:
+            mod_lists, labels = zip(*batch)
         # Stack each modality across batch
         num_mods = len(batch[0][0])
         mods_stacked = []
         for i in range(num_mods):
             mods_stacked.append(torch.stack([m[i] for m in mod_lists]))
         labels = torch.tensor(labels)
+        if has_subject_ids:
+            return mods_stacked, labels, torch.tensor(subject_ids)
         return mods_stacked, labels
 
     base_path = args.file_path  # note: use file_path, not data_dir
+    
+    def load_subject_data(subject_ids, split_name):
+        merged = []
+        for subject_id in subject_ids:
+            subject_path = os.path.join(base_path, f"subject_{subject_id}.pkl")
+            if not os.path.exists(subject_path):
+                raise FileNotFoundError(
+                    f"Missing PAM subject file for {split_name}: {subject_path}. "
+                    "Re-run prepare_pam_data.py to generate per-subject files."
+                )
+            with open(subject_path, 'rb') as f:
+                subject_samples = pickle.load(f)
+                merged.extend((mods, label, subject_id) for mods, label in subject_samples)
+        return merged
 
-    train_dataset = PAMDataset(os.path.join(base_path, "train_all_subjects.pkl"), args.tt_max)
+    def load_legacy_split(filename):
+        with open(os.path.join(base_path, filename), 'rb') as f:
+            return pickle.load(f)
+
+    def compute_modality_stats(samples):
+        stats = []
+        num_mods = len(samples[0][0])
+        for mod_idx in range(num_mods):
+            flattened = torch.cat(
+                [sample[0][mod_idx].reshape(-1, sample[0][mod_idx].shape[-1]) for sample in samples],
+                dim=0,
+            )
+            mean = flattened.mean(dim=0)
+            std = flattened.std(dim=0)
+            std = torch.where(std < 1e-6, torch.ones_like(std), std)
+            stats.append((mean, std))
+        return stats
+
+    def normalize_samples(samples, stats):
+        normalized = []
+        for sample in samples:
+            mods, label = sample[0], sample[1]
+            norm_mods = []
+            for mod, (mean, std) in zip(mods, stats):
+                norm_mods.append((mod - mean) / std)
+            if len(sample) > 2:
+                normalized.append((norm_mods, label, sample[2]))
+            else:
+                normalized.append((norm_mods, label))
+        return normalized
+
+    requested_subjects = sorted(set(args.pam_train_subjects + args.pam_val_subjects + args.pam_test_subjects))
+    existing_subjects = [
+        subject_id for subject_id in requested_subjects
+        if os.path.exists(os.path.join(base_path, f"subject_{subject_id}.pkl"))
+    ]
+    missing_subjects = [subject_id for subject_id in requested_subjects if subject_id not in existing_subjects]
+
+    modality_dims = None
+
+    if len(existing_subjects) == len(requested_subjects):
+        train_data = load_subject_data(args.pam_train_subjects, "train")
+        val_data = load_subject_data(args.pam_val_subjects, "val")
+        test_data = load_subject_data(args.pam_test_subjects, "test")
+        print(f"PAM subject splits - train: {args.pam_train_subjects}, val: {args.pam_val_subjects}, test: {args.pam_test_subjects}")
+    elif len(existing_subjects) > 0:
+        raise FileNotFoundError(
+            "Found some PAM per-subject files but not all requested ones. "
+            f"Existing subjects: {existing_subjects}. Missing subjects: {missing_subjects}. "
+            "Re-run prepare_pam_data.py so all requested subjects are generated consistently."
+        )
+    else:
+        print("Per-subject PAM files not found, falling back to legacy aggregate split files.")
+        train_data = load_legacy_split("train_all_subjects.pkl")
+        val_data = load_legacy_split("val_all_subjects.pkl")
+        test_data = load_legacy_split("test_all_subjects.pkl")
+
+    if len(train_data) == 0:
+        raise ValueError("PAM training split is empty. Check the selected train subjects and processed subject files.")
+
+    modality_dims = [sample.shape[-1] for sample in train_data[0][0]]
+    print(f"PAM modality dims inferred from processed data: {modality_dims}")
+
+    # Fit normalization only on the training split, then apply it to val/test.
+    pam_stats = compute_modality_stats(train_data)
+    train_data = normalize_samples(train_data, pam_stats)
+    val_data = normalize_samples(val_data, pam_stats)
+    test_data = normalize_samples(test_data, pam_stats)
+
+    train_dataset = PAMDataset(train_data, args.tt_max)
     if args.train_sample_ratio < 1.0:
         total = len(train_dataset)
         num = int(total * args.train_sample_ratio)
         rng = np.random.RandomState(args.seed)
         indices = rng.choice(total, num, replace=False)
         train_dataset = Subset(train_dataset, indices)
+
+    # Compute inverse-frequency class weights from the actual training set used.
+    if isinstance(train_dataset, Subset):
+        train_labels = [train_dataset.dataset.data[i][1] for i in train_dataset.indices]
+    else:
+        train_labels = [sample[1] for sample in train_dataset.data]
+    class_counts = np.bincount(np.array(train_labels, dtype=np.int64), minlength=args.num_labels)
+    class_counts = np.maximum(class_counts, 1)
+    inv_freq = 1.0 / class_counts
+    class_weights = inv_freq / inv_freq.sum() * len(inv_freq)
 
     train_loader = DataLoader(
         train_dataset,
@@ -77,18 +176,18 @@ def get_pam_dataloaders(args):
         collate_fn=collate_fn
     )
     val_loader = DataLoader(
-        PAMDataset(os.path.join(base_path, "val_all_subjects.pkl"), args.tt_max),
+        PAMDataset(val_data, args.tt_max),
         batch_size=args.eval_batch_size,
         shuffle=False,
         collate_fn=collate_fn
     )
     test_loader = DataLoader(
-        PAMDataset(os.path.join(base_path, "test_all_subjects.pkl"), args.tt_max),
+        PAMDataset(test_data, args.tt_max),
         batch_size=args.eval_batch_size,
         shuffle=False,
         collate_fn=collate_fn
     )
-    return train_loader, val_loader, test_loader
+    return train_loader, val_loader, test_loader, class_weights, modality_dims
 
 def get_stratified_permutation(dataset, labels, rng):
     """
@@ -117,6 +216,8 @@ def main():
 
     if args.dataset == "pam":
         args.modeltype = "pam"         # to distinguish in logging, but not used
+        # PAMAP2 setup in this code path uses 4 modalities: chest, hand, ankle, heart_rate.
+        args.num_modalities = 4
 
     prefix = "fusemoe_new"
 
@@ -227,7 +328,7 @@ def main():
                 # Full dataset
                 _, _, train_dataloader = data_perpare(args, 'train', tokenizer)
         elif args.dataset == "pam":
-            train_dataloader, val_dataloader, test_data_loader = get_pam_dataloaders(args)
+            train_dataloader, val_dataloader, test_data_loader, pam_class_weights, pam_modality_dims = get_pam_dataloaders(args)
 
         
     # if args.modeltype == 'Text':
@@ -250,11 +351,13 @@ def main():
             model = MULTCrossModel(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, orig_d_txt=768,
                                 ts_seq_num=args.tt_max, text_seq_num=args.num_of_notes, Biobert=BioBert)
     elif args.dataset == "pam":
-        # PAM modalities: chest(13), hand(13), ankle(13), heart_rate(1)
-        modality_dims = [13, 13, 13, 1]
+        modality_dims = pam_modality_dims
         # Ensure cross_method is set (from args)
         from core.model import FlexiModalMULTCrossModel
         model = FlexiModalMULTCrossModel(args, device, modality_dims)
+        if args.mode == "train":
+            weight_tensor = torch.tensor(pam_class_weights, dtype=torch.float32, device=device)
+            model.loss_fct = nn.CrossEntropyLoss(weight=weight_tensor)
 
     if args.modeltype=='TS':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)

@@ -5,22 +5,19 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH -t 4:00:00
-#SBATCH -J moe_inner_%j
-#SBATCH -o ../../out/Week_16/moe_%j.out
-#SBATCH -e ../../out/Week_16/moe_%j.err
+#SBATCH -J moe_week18_%j
+#SBATCH -o ../../out/Week_18/moe_%j.out
+#SBATCH -e ../../out/Week_18/moe_%j.err
 
 module load anaconda
 conda activate /scratch/gilbreth/pham156/conda_envs/fusemoe
-# export WANDB_MODE=offline
 export WANDB_DISABLED=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    # --seed) SEED="$2"; shift 2 ;;
     --task) TASK="$2"; shift 2 ;;
     --num_labels) NUM_LABELS="$2"; shift 2 ;;
     --primary_metric) PRIMARY_METRIC="$2"; shift 2 ;;
-    --seed) SEED="$2"; shift 2 ;;
     --gating) GATING="$2"; shift 2 ;;
     --experts) EXPERTS="$2"; shift 2 ;;
     --top_k) TOP_K="$2"; shift 2 ;;
@@ -32,12 +29,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+POLY_POWER="${POLY_POWER:-0}"
+
 cd /home/pham156/MoE/FuseMoE_poly/src/scripts
 
-# Loop over powers inside the job
-for RATIO in 0.02 0.05 0.1 0.2 0.4 0.6 0.8; do
-  
-  echo "Running task=$TASK, ratio=$RATIO, gating=$GATING, poly_power=$POLY_POWER, seed=$SEED, shared_experts=$SHARED_EXPERTS, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, noisy_gating=True, task=$TASK, use_bias=True, normalized=$NORMALIZED"
+for SEED in 82 92 102 112 122; do
+  echo "Running task=$TASK, ratio=1.0, gating=$GATING, poly_power=$POLY_POWER, seed=$SEED, shared_experts=$SHARED_EXPERTS, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, noisy_gating=True, normalized=$NORMALIZED"
 
   python -W ignore main_mimiciv.py \
     --num_train_epochs 8 \
@@ -64,7 +61,7 @@ for RATIO in 0.02 0.05 0.1 0.2 0.4 0.6 0.8; do
     --primary_metric "$PRIMARY_METRIC" \
     --file_path '../../data/MIMIC-IV' \
     --num_labels "$NUM_LABELS" \
-    --train_sample_ratio "$RATIO" \
+    --train_sample_ratio 1.0 \
     --num_heads 8 \
     --embed_time 64 \
     --tt_max 48 \
@@ -93,8 +90,6 @@ for RATIO in 0.02 0.05 0.1 0.2 0.4 0.6 0.8; do
     --normalized "$NORMALIZED" \
     --poly_power "$POLY_POWER"
 
-
-  echo "Finished gating=$GATING, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, shared_experts=$SHARED_EXPERTS, noisy_gating=True, task=$TASK, poly_power=$POLY_POWER"
+  echo "Finished gating=$GATING, router_type=$ROUTER, num_experts=$EXPERTS, top_k=$TOP_K, shared_experts=$SHARED_EXPERTS, task=$TASK, poly_power=$POLY_POWER, seed=$SEED"
   echo "---------------------------------------------"
-  
 done
