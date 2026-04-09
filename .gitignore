@@ -5,6 +5,8 @@
 *.log
 *.pkl
 *.dat
+*.csv
+*.json
 ./data/
 ./checkpoints/
 ./results/
