@@ -9,6 +9,113 @@ import copy
 import pdb
 
 
+def default_router_instruction(task, modeltype):
+    modalities = []
+    if "TS" in modeltype:
+        modalities.append("time-series clinical measurements for acute physiological trends")
+    if "CXR" in modeltype:
+        modalities.append("chest X-ray features for cardiopulmonary imaging evidence")
+    if "Text" in modeltype:
+        modalities.append("clinical notes for diagnoses, comorbidities, and clinical context")
+    if "ECG" in modeltype:
+        modalities.append("ECG features for abnormal cardiac patterns")
+
+    modality_text = "; ".join(modalities) if modalities else "available clinical modalities"
+    if "ihm" in task:
+        target = "in-hospital mortality"
+        evidence = "acute physiological instability, severe cardiopulmonary findings, comorbidities, and abnormal cardiac patterns"
+    elif "los" in task:
+        target = "prolonged length of stay"
+        evidence = "disease severity, complications, delayed recovery, abnormal imaging findings, unstable physiological trends, and comorbidities"
+    elif "pheno" in task:
+        target = "clinical phenotypes"
+        evidence = "diagnosis-specific evidence, abnormal measurements, imaging findings, and relevant clinical context"
+    else:
+        target = "the clinical prediction task"
+        evidence = "task-relevant evidence across the available modalities"
+
+    return (
+        f"Predict {target}. Use {modality_text}. "
+        f"Prioritize {evidence} when selecting useful experts."
+    )
+
+
+def default_expert_profiles(profile_set):
+    if profile_set != "icu_organ_system":
+        raise ValueError(f"Unknown semantic_profile_set: {profile_set}")
+
+    return [
+        (
+            "Cardiovascular and hemodynamic expert. Focuses on heart and circulation "
+            "problems including blood pressure, heart rate, shock, vasopressors, "
+            "poor perfusion, cardiac arrest, and heart failure."
+        ),
+        (
+            "Respiratory and pulmonary expert. Focuses on breathing and lung problems "
+            "including oxygen saturation, ventilation, respiratory rate, pneumonia, "
+            "pulmonary edema, respiratory failure, and chest X-ray lung findings."
+        ),
+        (
+            "Infection and inflammation expert. Focuses on sepsis, fever, antibiotics, "
+            "white blood cell count, infection source, inflammatory response, and "
+            "clinical deterioration from infection."
+        ),
+        (
+            "General severity and chronic disease expert. Focuses on ICU severity, "
+            "multi-organ failure, frailty, comorbidities, poor prognosis, prolonged "
+            "recovery, and overall patient instability."
+        ),
+    ]
+
+
+def encode_expert_profiles(args, biobert, tokenizer, device):
+    if biobert is None or tokenizer is None:
+        raise ValueError("--use_semantic_expert_profiles requires a text encoder/tokenizer, so use a modeltype that includes Text.")
+
+    profiles = default_expert_profiles(args.semantic_profile_set)
+    encoded = tokenizer(
+        profiles,
+        return_tensors="pt",
+        truncation=True,
+        max_length=args.max_length,
+        padding=True,
+    )
+    encoded = {k: v.to(device) for k, v in encoded.items()}
+
+    was_training = biobert.training
+    biobert.eval()
+    with torch.no_grad():
+        outputs = biobert(**encoded)
+        profile_embeddings = outputs[0][:, 0, :].detach()
+    if was_training:
+        biobert.train()
+    return profile_embeddings
+
+
+def encode_router_instruction(args, biobert, tokenizer, device, modeltype):
+    if biobert is None or tokenizer is None:
+        raise ValueError("--use_instruction_router requires a text encoder/tokenizer, so use a modeltype that includes Text.")
+
+    instruction = args.router_instruction or default_router_instruction(args.task, modeltype)
+    encoded = tokenizer(
+        instruction,
+        return_tensors="pt",
+        truncation=True,
+        max_length=args.max_length,
+        padding="max_length" if args.pad_to_max_length else False,
+    )
+    encoded = {k: v.to(device) for k, v in encoded.items()}
+
+    was_training = biobert.training
+    biobert.eval()
+    with torch.no_grad():
+        outputs = biobert(**encoded)
+        instruction_embedding = outputs[0][:, 0, :].detach()
+    if was_training:
+        biobert.train()
+    return instruction_embedding.squeeze(0)
+
+
 class BertForRepresentation(nn.Module):
     """
     This class represents a BERT model for text representation.
@@ -118,7 +225,7 @@ class TextModel(nn.Module):
             return torch.nn.functional.sigmoid(output)
 
 class MULTCrossModel(nn.Module):
-    def __init__(self,args,device,modeltype=None,orig_d_ts=None,orig_reg_d_ts=None,orig_d_txt=None,ts_seq_num=None,text_seq_num=None, Biobert=None):
+    def __init__(self,args,device,modeltype=None,orig_d_ts=None,orig_reg_d_ts=None,orig_d_txt=None,ts_seq_num=None,text_seq_num=None, Biobert=None, tokenizer=None):
         """
         Construct a MulT Cross model.
         """
@@ -147,6 +254,23 @@ class MULTCrossModel(nn.Module):
         self.num_modalities = args.num_modalities
         self.use_pt_text_embeddings = args.use_pt_text_embeddings
         self.token_type_embeddings = nn.Embedding(args.num_modalities, args.embed_dim)
+        self.use_instruction_router = args.use_instruction_router
+        if self.use_instruction_router:
+            instruction_embedding = encode_router_instruction(args, Biobert, tokenizer, device, self.modeltype)
+            self.register_buffer("router_instruction_embedding", instruction_embedding)
+        else:
+            self.router_instruction_embedding = None
+
+        if args.use_semantic_expert_profiles:
+            profile_embeddings = encode_expert_profiles(args, Biobert, tokenizer, device)
+            self.register_buffer("semantic_expert_profile_embeddings", profile_embeddings)
+            args.semantic_profile_embeddings = profile_embeddings
+        else:
+            self.semantic_expert_profile_embeddings = None
+            args.semantic_profile_embeddings = None
+
+        self.semantic_profile_source = args.semantic_profile_source
+        self.semantic_profile_note_pooling = args.semantic_profile_note_pooling
 
         if self.irregular_learn_emb_ts or self.irregular_learn_emb_text:
             self.time_query=torch.linspace(0, 1., self.tt_max)
@@ -338,6 +462,40 @@ class MULTCrossModel(nn.Module):
         non_missing = all_indices[missing_mask]
         return missing_indices, non_missing
 
+    def _compute_note_semantic_profile_logits(self, text_emb, note_time_mask_list):
+        if (
+            not self.args.use_semantic_expert_profiles
+            or self.semantic_profile_source != "note"
+            or text_emb is None
+            or self.semantic_expert_profile_embeddings is None
+        ):
+            return None
+
+        profiles = self.semantic_expert_profile_embeddings.to(
+            device=text_emb.device,
+            dtype=text_emb.dtype,
+        )
+        note_embeddings = F.normalize(text_emb, dim=-1)
+        profile_embeddings = F.normalize(profiles, dim=-1)
+        note_scores = note_embeddings @ profile_embeddings.t()
+
+        if note_time_mask_list is not None:
+            valid_notes = note_time_mask_list.to(device=text_emb.device).bool()
+        else:
+            valid_notes = torch.ones(note_scores.shape[:2], dtype=torch.bool, device=text_emb.device)
+
+        if self.semantic_profile_note_pooling == "mean":
+            masked_scores = note_scores.masked_fill(~valid_notes.unsqueeze(-1), 0.0)
+            denom = valid_notes.sum(dim=1, keepdim=True).clamp_min(1).to(dtype=text_emb.dtype)
+            return masked_scores.sum(dim=1) / denom
+
+        masked_scores = note_scores.masked_fill(~valid_notes.unsqueeze(-1), -1e4)
+        pooled = masked_scores.max(dim=1).values
+        no_valid_notes = valid_notes.sum(dim=1) == 0
+        if no_valid_notes.any():
+            pooled[no_valid_notes] = 0.0
+        return pooled
+
     def forward(self, x_ts, x_ts_mask, ts_tt_list, cxr_missing=None, text_missing=None, ecg_missing=None, input_ids_sequences=None,
                 attn_mask_sequences=None, text_emb=None, note_time_list=None, note_time_mask_list=None,
                 labels=None, reg_ts=None, cxr_feats=None, cxr_time=None, cxr_time_mask=None, ecg_feats=None,
@@ -395,6 +553,11 @@ class MULTCrossModel(nn.Module):
                 x_txt = text_emb
             else:
                 x_txt = self.bertrep(input_ids_sequences, attn_mask_sequences)
+
+            semantic_profile_logits = self._compute_note_semantic_profile_logits(
+                x_txt,
+                note_time_mask_list,
+            )
 
             if self.irregular_learn_emb_text:
                 time_key = self.learn_time_embedding(note_time_list).to(self.device)
@@ -461,14 +624,36 @@ class MULTCrossModel(nn.Module):
 
         balance_loss = None
         if self.cross_method in ["self_cross", "moe", "hme"]:
+            if "Text" not in self.modeltype:
+                semantic_profile_logits = None
             if self.modeltype == "TS_Text":
-                hiddens, balance_loss = self.trans_self_cross_ts_txt([proj_x_txt, proj_x_ts], ['txt', 'ts'])
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_txt, proj_x_ts],
+                    ['txt', 'ts'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                )
             elif self.modeltype == "TS_CXR":
-                hiddens, balance_loss = self.trans_self_cross_ts_txt([proj_x_cxr, proj_x_ts], ['cxr', 'ts'])
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_cxr, proj_x_ts],
+                    ['cxr', 'ts'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                )
             elif self.modeltype == "TS_CXR_Text":
-                hiddens, balance_loss = self.trans_self_cross_ts_txt([proj_x_ts, proj_x_cxr, proj_x_txt], ['ts', 'cxr', 'txt'])
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_ts, proj_x_cxr, proj_x_txt],
+                    ['ts', 'cxr', 'txt'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                )
             elif self.modeltype == "TS_CXR_Text_ECG":
-                hiddens, balance_loss = self.trans_self_cross_ts_txt([proj_x_ts, proj_x_cxr, proj_x_txt, proj_x_ecg], ['ts', 'cxr', 'txt', 'ecg'])
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_ts, proj_x_cxr, proj_x_txt, proj_x_ecg],
+                    ['ts', 'cxr', 'txt', 'ecg'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                )
 
             if hiddens is None:
                 return None
@@ -517,6 +702,216 @@ class MULTCrossModel(nn.Module):
                 return task_loss, balance_loss
             return torch.nn.functional.sigmoid(output)
 
+
+class PAMPositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding used only for the lightweight PAM branch."""
+
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe.unsqueeze(0))
+
+    def forward(self, x):
+        x = x + self.pe[:, : x.size(1)]
+        return self.dropout(x)
+
+# class FlexiModalMULTCrossModel(nn.Module):
+#     """
+#     Model for PAMAP2 that accepts a list of modality tensors.
+#     Uses the same cross encoder and final layers as the original MULTCrossModel.
+#     """
+#     def __init__(self, args, device, modality_dims):
+#         super().__init__()
+#         self.args = args
+#         self.device = device
+#         self.num_modalities = len(modality_dims)
+#         self.d_model = args.embed_dim
+#         self.dropout = args.dropout
+#         self.cross_method = args.cross_method
+
+#         # Give each modality its own local temporal encoder before cross-modal fusion.
+#         self.modality_proj = nn.ModuleList([
+#             nn.Conv1d(
+#                 dim,
+#                 self.d_model,
+#                 kernel_size=args.kernel_size,
+#                 padding=math.floor((args.kernel_size - 1) / 2),
+#                 bias=False,
+#             )
+#             for dim in modality_dims
+#         ])
+#         self.modality_temporal = nn.ModuleList([
+#             TransformerEncoder(
+#                 embed_dim=self.d_model,
+#                 num_heads=args.num_heads,
+#                 layers=args.layers,
+#                 device=self.device,
+#                 attn_dropout=self.dropout,
+#                 relu_dropout=self.dropout,
+#                 res_dropout=self.dropout,
+#                 embed_dropout=self.dropout,
+#                 attn_mask=False,
+#                 q_seq_len=args.tt_max,
+#                 kv_seq_len=None,
+#             )
+#             for _ in modality_dims
+#         ])
+#         self.modality_positional = nn.ModuleList([
+#             PAMPositionalEncoding(self.d_model, dropout=self.dropout, max_len=args.tt_max + 8)
+#             for _ in modality_dims
+#         ])
+#         self.modality_self_attn = nn.ModuleList([
+#             nn.MultiheadAttention(
+#                 self.d_model,
+#                 args.num_heads,
+#                 dropout=self.dropout,
+#                 batch_first=True,
+#             )
+#             for _ in modality_dims
+#         ])
+#         self.modality_attn_norm = nn.ModuleList([
+#             nn.LayerNorm(self.d_model) for _ in modality_dims
+#         ])
+#         self.modality_ffn = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Linear(self.d_model, self.d_model * 2),
+#                 nn.ReLU(),
+#                 nn.Dropout(self.dropout),
+#                 nn.Linear(self.d_model * 2, self.d_model),
+#             )
+#             for _ in modality_dims
+#         ])
+#         self.modality_ffn_norm = nn.ModuleList([
+#             nn.LayerNorm(self.d_model) for _ in modality_dims
+#         ])
+#         self.modality_norm = nn.ModuleList([
+#             nn.LayerNorm(self.d_model) for _ in modality_dims
+#         ])
+#         self.token_type_embeddings = nn.Embedding(self.num_modalities, self.d_model)
+#         # Lightweight attention blocks keep the PAM model simple while letting it
+#         # reweight noisy channels and sensors before MoE fusion.
+#         hidden_gate = max(16, self.d_model // 4)
+#         self.modality_channel_gate = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Linear(self.d_model, hidden_gate),
+#                 nn.ReLU(),
+#                 nn.Linear(hidden_gate, self.d_model),
+#                 nn.Sigmoid(),
+#             )
+#             for _ in modality_dims
+#         ])
+#         self.temporal_pool = nn.ModuleList([
+#             nn.Linear(self.d_model, 1) for _ in modality_dims
+#         ])
+#         self.modality_score = nn.Sequential(
+#             nn.Linear(self.d_model, hidden_gate),
+#             nn.ReLU(),
+#             nn.Linear(hidden_gate, 1),
+#         )
+
+#         # Cross encoder (same as in original)
+#         self.trans_self_cross_ts_txt = self._get_cross_network(args)
+
+#         # Final layers
+#         total_dim = self.d_model * self.num_modalities
+#         self.proj1 = nn.Linear(total_dim, total_dim)
+#         self.proj2 = nn.Linear(total_dim, total_dim)
+#         self.out_layer = nn.Linear(total_dim, args.num_labels)
+#         self.loss_fct = nn.CrossEntropyLoss()
+
+#     def _get_cross_network(self, args):
+#         from core.module import TransformerCrossEncoder
+#         return TransformerCrossEncoder(
+#             args=args,
+#             embed_dim=self.d_model,
+#             num_heads=args.num_heads,
+#             layers=args.cross_layers,
+#             device=self.device,
+#             attn_dropout=self.dropout,
+#             relu_dropout=self.dropout,
+#             res_dropout=self.dropout,
+#             embed_dropout=self.dropout,
+#             attn_mask=False,
+#             q_seq_len_1=args.tt_max,
+#             num_modalities=self.num_modalities
+#         )
+
+#     def forward(self, modality_list, labels=None):
+#         B, T = modality_list[0].shape[:2]
+
+#         projected = []
+#         for mod_idx, (
+#             proj,
+#             temporal_encoder,
+#             pos_enc,
+#             self_attn,
+#             attn_norm,
+#             ffn,
+#             ffn_norm,
+#             norm,
+#             ch_gate,
+#             mod,
+#         ) in enumerate(
+#             zip(
+#                 self.modality_proj,
+#                 self.modality_temporal,
+#                 self.modality_positional,
+#                 self.modality_self_attn,
+#                 self.modality_attn_norm,
+#                 self.modality_ffn,
+#                 self.modality_ffn_norm,
+#                 self.modality_norm,
+#                 self.modality_channel_gate,
+#                 modality_list,
+#             )
+#         ):
+#             x = proj(mod.transpose(1, 2)).transpose(1, 2)  # (B, T, d_model)
+#             modality_ids = torch.full((B, T), mod_idx, dtype=torch.long, device=mod.device)
+#             x = norm(x + self.token_type_embeddings(modality_ids))
+#             x = pos_enc(x)
+#             attn_out, _ = self_attn(x, x, x, need_weights=False)
+#             x = attn_norm(x + F.dropout(attn_out, p=self.dropout, training=self.training))
+#             x = ffn_norm(x + ffn(x))
+#             x = F.dropout(x, p=self.dropout, training=self.training)
+#             x = temporal_encoder(x.permute(1, 0, 2))
+#             gate = ch_gate(x.mean(dim=0)).unsqueeze(0)
+#             x = x * gate
+#             projected.append(x)
+
+#         hiddens, balance_loss = self.trans_self_cross_ts_txt(
+#             projected, [f"mod_{i}" for i in range(self.num_modalities)]
+#         )
+#         pooled = []
+#         for hid, pool in zip(hiddens, self.temporal_pool):
+#             hid_bt = hid.transpose(0, 1)
+#             attn = torch.softmax(pool(hid_bt).squeeze(-1), dim=1).unsqueeze(-1)
+#             pooled.append((hid_bt * attn).sum(dim=1))
+
+#         modality_logits = torch.cat([self.modality_score(p) for p in pooled], dim=1)
+#         modality_weights = torch.softmax(modality_logits, dim=1)
+#         weighted_pooled = [
+#             pooled[i] * modality_weights[:, i].unsqueeze(-1)
+#             for i in range(self.num_modalities)
+#         ]
+#         pooled_hs = torch.cat(weighted_pooled, dim=1)
+
+#         out = F.relu(self.proj1(pooled_hs))
+#         out = F.dropout(out, p=self.dropout, training=self.training)
+#         out = self.proj2(out) + pooled_hs
+#         logits = self.out_layer(out)
+
+#         if labels is not None:
+#             loss = self.loss_fct(logits, labels)
+#             return loss, balance_loss
+#         else:
+#             return logits
+
 class FlexiModalMULTCrossModel(nn.Module):
     """
     Model for PAMAP2 that accepts a list of modality tensors.
@@ -531,37 +926,10 @@ class FlexiModalMULTCrossModel(nn.Module):
         self.dropout = args.dropout
         self.cross_method = args.cross_method
 
-        # Give each modality its own local temporal encoder before cross-modal fusion.
+        # Project each modality to d_model
         self.modality_proj = nn.ModuleList([
-            nn.Conv1d(
-                dim,
-                self.d_model,
-                kernel_size=args.kernel_size,
-                padding=math.floor((args.kernel_size - 1) / 2),
-                bias=False,
-            )
-            for dim in modality_dims
+            nn.Linear(dim, self.d_model) for dim in modality_dims
         ])
-        self.modality_temporal = nn.ModuleList([
-            TransformerEncoder(
-                embed_dim=self.d_model,
-                num_heads=args.num_heads,
-                layers=args.layers,
-                device=self.device,
-                attn_dropout=self.dropout,
-                relu_dropout=self.dropout,
-                res_dropout=self.dropout,
-                embed_dropout=self.dropout,
-                attn_mask=False,
-                q_seq_len=args.tt_max,
-                kv_seq_len=None,
-            )
-            for _ in modality_dims
-        ])
-        self.modality_norm = nn.ModuleList([
-            nn.LayerNorm(self.d_model) for _ in modality_dims
-        ])
-        self.token_type_embeddings = nn.Embedding(self.num_modalities, self.d_model)
 
         # Cross encoder (same as in original)
         self.trans_self_cross_ts_txt = self._get_cross_network(args)
@@ -593,25 +961,21 @@ class FlexiModalMULTCrossModel(nn.Module):
     def forward(self, modality_list, labels=None):
         B, T = modality_list[0].shape[:2]
 
+        # projected = [proj(mod) for proj, mod in zip(self.modality_proj, modality_list)]
         projected = []
-        for mod_idx, (proj, temporal_encoder, norm, mod) in enumerate(
-            zip(self.modality_proj, self.modality_temporal, self.modality_norm, modality_list)
-        ):
-            x = proj(mod.transpose(1, 2)).transpose(1, 2)  # (B, T, d_model)
-            modality_ids = torch.full((B, T), mod_idx, dtype=torch.long, device=mod.device)
-            x = norm(x + self.token_type_embeddings(modality_ids))
-            x = F.dropout(x, p=self.dropout, training=self.training)
-            x = temporal_encoder(x.permute(1, 0, 2))
+        for proj, mod in zip(self.modality_proj, modality_list):
+            x = proj(mod)                     # (B, T, d_model)
+            x = x.permute(1, 0, 2)           # (T, B, d_model)
             projected.append(x)
 
         hiddens, balance_loss = self.trans_self_cross_ts_txt(
             projected, [f"mod_{i}" for i in range(self.num_modalities)]
         )
-        pooled_hs = torch.cat([hid.mean(dim=0) for hid in hiddens], dim=1)
+        last_hs = torch.cat([hid[-1] for hid in hiddens], dim=1)
 
-        out = F.relu(self.proj1(pooled_hs))
+        out = F.relu(self.proj1(last_hs))
         out = F.dropout(out, p=self.dropout, training=self.training)
-        out = self.proj2(out) + pooled_hs
+        out = self.proj2(out) + last_hs
         logits = self.out_layer(out)
 
         if labels is not None:
@@ -619,7 +983,7 @@ class FlexiModalMULTCrossModel(nn.Module):
             return loss, balance_loss
         else:
             return logits
-
+        
 class TSMixed(nn.Module):
     def __init__(self,args,device,modeltype=None,orig_d_ts=None,orig_reg_d_ts=None,ts_seq_num=None):
 

@@ -1,0 +1,21 @@
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccccc}
+\toprule
+Task & Metric & Softmax & Gaussian & Laplace & Poly & Unnorm Poly \\
+\midrule
+\multirow{2}{*}{IHM} & AUC & 80.910 $\pm$ 0.325 & 80.816 $\pm$ 0.424 & 80.968 $\pm$ 0.285 & \underline{80.971 $\pm$ 0.366} & \textbf{80.995 $\pm$ 0.319} \\
+ & F1 & 46.739 $\pm$ 3.940 & 47.757 $\pm$ 4.225 & 46.588 $\pm$ 3.896 & \underline{48.001 $\pm$ 2.717} & \textbf{48.657 $\pm$ 1.417} \\
+\midrule
+\multirow{2}{*}{LOS} & AUC & 81.911 $\pm$ 0.443 & 81.855 $\pm$ 0.385 & 81.913 $\pm$ 0.494 & \textbf{82.009 $\pm$ 0.355} & \underline{81.933 $\pm$ 0.690} \\
+ & F1 & 73.213 $\pm$ 0.510 & 73.248 $\pm$ 0.819 & 73.038 $\pm$ 0.892 & \underline{73.302 $\pm$ 0.780} & \textbf{73.551 $\pm$ 0.601} \\
+\midrule
+\multirow{2}{*}{PHE} & AUC-w & \textbf{71.202 $\pm$ 0.538} & \underline{71.159 $\pm$ 0.492} & 71.148 $\pm$ 0.502 & 71.005 $\pm$ 0.338 & 70.929 $\pm$ 0.115 \\
+ & F1 & \textbf{31.953 $\pm$ 1.139} & 31.575 $\pm$ 1.405 & \underline{31.782 $\pm$ 1.276} & 31.527 $\pm$ 1.379 & 31.278 $\pm$ 1.541 \\
+\bottomrule
+\end{tabular}
+\caption{Exploratory comparison under joint routing with expert setting $4\ 2\ 0$ using seeds $\{1,32,42,72,92,123\}$, fixed polynomial powers ($p_\text{norm}=2$, $p_\text{unnorm}=2$). Best is \textbf{bold}, second-best is \underline{underlined}.}
+\label{tab:explore_dominance2_constp2p2_6seed_132427292123_joint420_gating_table}
+\end{table}

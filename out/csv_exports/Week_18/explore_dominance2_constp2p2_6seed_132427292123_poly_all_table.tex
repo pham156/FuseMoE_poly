@@ -1,0 +1,24 @@
+\begin{table*}[h]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccccc}
+\toprule
+& & \multicolumn{4}{c}{Poly} & \multicolumn{4}{c}{Unnorm Poly} \\
+\cmidrule(lr){3-6} \cmidrule(lr){7-10}
+Task & Metric & Joint & PerMod & Joint+Shared & PerMod+Shared & Joint & PerMod & Joint+Shared & PerMod+Shared \\
+\midrule
+\multirow{2}{*}{IHM} & AUC & \underline{80.971 $\pm$ 0.366} & 80.144 $\pm$ 1.360 & 80.876 $\pm$ 0.270 & 80.893 $\pm$ 0.653 & \textbf{80.995 $\pm$ 0.319} & 78.973 $\pm$ 1.748 & 80.933 $\pm$ 0.405 & 80.911 $\pm$ 0.710 \\
+ & F1 & 48.001 $\pm$ 2.717 & 47.505 $\pm$ 2.981 & 47.728 $\pm$ 3.098 & 43.229 $\pm$ 2.838 & \textbf{48.657 $\pm$ 1.417} & 48.021 $\pm$ 1.721 & \underline{48.231 $\pm$ 1.813} & 42.418 $\pm$ 3.580 \\
+\midrule
+\multirow{2}{*}{LOS} & AUC & 82.009 $\pm$ 0.355 & 81.040 $\pm$ 0.707 & \textbf{82.062 $\pm$ 0.421} & \underline{82.031 $\pm$ 0.246} & 81.933 $\pm$ 0.690 & 81.312 $\pm$ 0.264 & 81.820 $\pm$ 0.975 & 81.924 $\pm$ 0.205 \\
+ & F1 & 73.302 $\pm$ 0.780 & \underline{73.645 $\pm$ 0.436} & 73.454 $\pm$ 1.014 & \textbf{73.723 $\pm$ 0.729} & 73.551 $\pm$ 0.601 & 73.428 $\pm$ 0.276 & 73.361 $\pm$ 0.868 & 73.504 $\pm$ 0.722 \\
+\midrule
+\multirow{2}{*}{PHE} & AUC-w & \underline{71.005 $\pm$ 0.338} & 70.240 $\pm$ 0.498 & \textbf{71.158 $\pm$ 0.516} & 70.705 $\pm$ 0.256 & 70.929 $\pm$ 0.115 & 69.775 $\pm$ 0.549 & 70.879 $\pm$ 0.426 & 70.900 $\pm$ 0.397 \\
+ & F1 & 31.527 $\pm$ 1.379 & 32.377 $\pm$ 1.628 & 31.729 $\pm$ 1.502 & \textbf{32.869 $\pm$ 1.310} & 31.278 $\pm$ 1.541 & 31.715 $\pm$ 0.961 & 31.616 $\pm$ 1.389 & \underline{32.646 $\pm$ 1.525} \\
+\bottomrule
+\end{tabular}
+}
+\caption{Effect of routing strategy and shared experts for polynomial and unnormalized polynomial gating under exploratory seeds $\{1,32,42,72,92,123\}$, ratio $1.0$, with fixed powers $p_\text{norm}=2$ and $p_\text{unnorm}=2$. Best is \textbf{bold} and second-best is \underline{underlined}.}
+\label{tab:explore_dominance2_constp2p2_6seed_132427292123_poly_all_table}
+\end{table*}

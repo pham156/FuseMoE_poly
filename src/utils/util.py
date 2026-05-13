@@ -178,6 +178,62 @@ def parse_args():
     parser.add_argument('--use_bias', type=str2bool, default=False, help='Add a learnable bias per expert in polynomial/student‑t gating')
     parser.add_argument('--shared_experts', type=int, default=0, help='Number of shared experts (always active). Default 0 = no shared experts.')
     parser.add_argument('--use_temp', type=str2bool, default=False, help='Temperature parameter for softmax gating function.')
+    parser.add_argument('--expert_type', default='mlp', choices=['mlp', 'lora'], help='Expert module type inside MoE. Use lora for frozen-base low-rank expert deltas.')
+    parser.add_argument('--lora_rank', default=8, type=int, help='Rank of each LoRA expert delta.')
+    parser.add_argument('--lora_alpha', default=16.0, type=float, help='LoRA scaling alpha; effective scale is alpha / rank.')
+    parser.add_argument('--lora_dropout', default=0.0, type=float, help='Dropout applied before the LoRA expert delta.')
+    parser.add_argument('--freeze_expert_base', type=str2bool, default=True, help='Freeze the base projection in LoRA experts and train only low-rank deltas.')
+    parser.add_argument('--use_instruction_router', action='store_true', help='Use a task instruction embedding to condition the MoE router.')
+    parser.add_argument('--router_instruction', default=None, type=str, help='Clinical/task instruction text used when --use_instruction_router is enabled. If unset, a default task/modality instruction is used.')
+    parser.add_argument('--instruction_router_scale', default=1.0, type=float, help='Scale applied to instruction-derived router logits.')
+    parser.add_argument(
+        '--instruction_router_fusion',
+        default='logit_bias',
+        choices=['logit_bias', 'input_add', 'both'],
+        help='How to fuse instruction into the router: logit_bias adds instruction-derived logits; input_add adds a projected instruction vector to router input; both uses both.'
+    )
+    parser.add_argument('--use_semantic_expert_profiles', action='store_true', help='Use fixed clinical expert profile embeddings as semantic router anchors.')
+    parser.add_argument(
+        '--semantic_profile_set',
+        default='icu_organ_system',
+        choices=['icu_organ_system'],
+        help='Built-in expert profile set used when --use_semantic_expert_profiles is enabled.'
+    )
+    parser.add_argument('--semantic_profile_scale', default=1.0, type=float, help='Scale applied to semantic profile router logits.')
+    parser.add_argument(
+        '--semantic_profile_fusion',
+        default='add',
+        choices=['add', 'replace'],
+        help='How semantic profile logits affect router logits: add combines with learned router logits; replace uses semantic logits only.'
+    )
+    parser.add_argument(
+        '--semantic_profile_source',
+        default='patient',
+        choices=['patient', 'note'],
+        help='patient uses the MoE patient/modality representation; note uses note-level text embeddings to produce semantic profile logits.'
+    )
+    parser.add_argument(
+        '--semantic_profile_note_pooling',
+        default='max',
+        choices=['max', 'mean'],
+        help='How to pool note-level profile similarities into patient-level profile logits.'
+    )
+    parser.add_argument(
+        '--semantic_profile_modalities',
+        nargs='*',
+        default=['txt'],
+        help='For per-modality routers with --semantic_profile_source note, modalities that receive note-derived semantic logits.'
+    )
+    parser.add_argument('--lingshu_model_path', default=None, type=str, help='Path or Hugging Face id for Lingshu/Qwen-VL backbone used by the separate Lingshu pseudo-token model.')
+    parser.add_argument('--lingshu_trust_remote_code', type=str2bool, default=True, help='Pass trust_remote_code to the Lingshu backbone loader.')
+    parser.add_argument('--lingshu_freeze_backbone', type=str2bool, default=True, help='Freeze Lingshu backbone parameters before attaching/trainining LoRA adapters.')
+    parser.add_argument('--lingshu_use_peft_lora', type=str2bool, default=True, help='Use PEFT LoRA adapters on the Lingshu backbone if peft is installed.')
+    parser.add_argument('--lingshu_lora_r', default=8, type=int, help='PEFT LoRA rank for Lingshu adapters.')
+    parser.add_argument('--lingshu_lora_alpha', default=16, type=int, help='PEFT LoRA alpha for Lingshu adapters.')
+    parser.add_argument('--lingshu_lora_dropout', default=0.05, type=float, help='PEFT LoRA dropout for Lingshu adapters.')
+    parser.add_argument('--lingshu_lora_target_modules', nargs='*', default=['q_proj', 'k_proj', 'v_proj', 'o_proj'], help='Target module names for PEFT LoRA on the Lingshu backbone.')
+    parser.add_argument('--lingshu_max_ts_tokens', default=48, type=int, help='Maximum time-series pseudo tokens passed to Lingshu.')
+    parser.add_argument('--lingshu_pooling', default='mean', choices=['mean', 'last'], help='Pooling strategy over Lingshu hidden states for classification.')
 
     args = parser.parse_args()
     return args

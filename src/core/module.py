@@ -493,7 +493,7 @@ class TransformerCrossEncoder(nn.Module):
         if self.normalize:
             self.layer_norm = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(num_modalities)])
 
-    def forward(self, x_in_list, modality):
+    def forward(self, x_in_list, modality, instruction_embedding=None, semantic_profile_logits=None):
         """
         Args:
             x_in_list (list of FloatTensor): embedded input of shape `(src_len, batch, embed_dim)`
@@ -519,7 +519,12 @@ class TransformerCrossEncoder(nn.Module):
             x_list = [F.dropout(x, p=self.dropout, training=self.training) for x in x_list]
         # encoder layers
         for layer in self.layers:
-            x_list, balance_loss = layer(x_list, modality) #proj_x_txt, proj_x_ts
+            x_list, balance_loss = layer(
+                x_list,
+                modality,
+                instruction_embedding=instruction_embedding,
+                semantic_profile_logits=semantic_profile_logits,
+            ) #proj_x_txt, proj_x_ts
             if x_list is None:
                 return None, None
             # Accumulate balance loss from all layers
@@ -594,7 +599,23 @@ class TransformerCrossEncoderLayer(nn.Module):
             normalized = args.normalized,
             use_bias=args.use_bias,
             shared_experts=args.shared_experts,
-            use_temp=args.use_temp
+            use_temp=args.use_temp,
+            expert_type=args.expert_type,
+            lora_rank=args.lora_rank,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            freeze_expert_base=args.freeze_expert_base,
+            use_instruction_router=args.use_instruction_router,
+            router_instruction_dim=getattr(args, "router_instruction_dim", None),
+            instruction_router_scale=args.instruction_router_scale,
+            instruction_router_fusion=args.instruction_router_fusion,
+            use_semantic_expert_profiles=args.use_semantic_expert_profiles,
+            semantic_profile_embeddings=getattr(args, "semantic_profile_embeddings", None),
+            semantic_profile_scale=args.semantic_profile_scale,
+            semantic_profile_fusion=args.semantic_profile_fusion,
+            semantic_profile_source=args.semantic_profile_source,
+            semantic_profile_note_pooling=args.semantic_profile_note_pooling,
+            semantic_profile_modalities=args.semantic_profile_modalities
             )
             
             self.moe = MoE(moe_config)
@@ -619,7 +640,7 @@ class TransformerCrossEncoderLayer(nn.Module):
 
             self.moe = HierarchicalMoE(moe_config)
         
-    def forward(self, x_list, modality):
+    def forward(self, x_list, modality, instruction_embedding=None, semantic_profile_logits=None):
         """
         Args:
             x (List of Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -651,7 +672,15 @@ class TransformerCrossEncoderLayer(nn.Module):
             embeddings = torch.concat(x_mod_in, dim=1)
             if torch.isnan(embeddings).any():
                 return None, None
-            moe_out, balance_loss = self.moe(x_mod_in, modalities=modality)
+            if self.args.cross_method == "moe":
+                moe_out, balance_loss = self.moe(
+                    x_mod_in,
+                    modalities=modality,
+                    instruction_embedding=instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                )
+            else:
+                moe_out, balance_loss = self.moe(x_mod_in, modalities=modality)
             x_mod_out = [moe_out[:, embd_len_list[i]:embd_len_list[i + 1]] for i in range(len(embd_len_list) - 1)]
             x_allmod_output = [torch.reshape(x, (seq_len, bs, -1)) for x in x_mod_out]
             moe_output = [F.dropout(x, p=self.res_dropout, training=self.training) for x in x_allmod_output]
@@ -781,4 +810,3 @@ def buffered_future_mask(tensor, tensor2=None):
     if tensor.is_cuda:
         future_mask = future_mask.cuda()
     return future_mask[:dim1, :dim2]
-

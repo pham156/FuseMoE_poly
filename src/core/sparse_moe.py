@@ -10,6 +10,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.distributions.normal import Normal
 import numpy as np
 from core.activations import ACT2FN
@@ -143,6 +144,64 @@ class MLP(nn.Module):
         return out
 
 
+class LoRAExpert(nn.Module):
+    """Frozen-base low-rank expert delta.
+
+    This implements the mentor's LoRA-style expert equation at the current MoE
+    latent-feature level:
+
+        y = base(x) + scale * ((x A) B)
+
+    The current architecture routes encoded multimodal representations, not raw
+    LLM token states, so the frozen base is a feature-space projection rather
+    than a pretrained medical LLM FFN layer.
+    """
+
+    def __init__(
+        self,
+        config: MoEConfig,
+        input_size: int,
+        output_size: int,
+        hidden_size: int,
+    ):
+        super(LoRAExpert, self).__init__()
+        rank = config.lora_rank
+        if rank <= 0:
+            raise ValueError("lora_rank must be positive")
+
+        self.base = nn.Linear(input_size, output_size)
+        self.lora_A = nn.Linear(input_size, rank, bias=False)
+        self.lora_B = nn.Linear(rank, output_size, bias=False)
+        self.dropout = nn.Dropout(config.lora_dropout)
+        self.scaling = config.lora_alpha / rank
+        self.log_soft = nn.LogSoftmax(1)
+
+        if input_size == output_size:
+            nn.init.eye_(self.base.weight)
+            nn.init.zeros_(self.base.bias)
+
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=np.sqrt(5))
+        nn.init.zeros_(self.lora_B.weight)
+
+        if config.freeze_expert_base:
+            for param in self.base.parameters():
+                param.requires_grad = False
+
+    def forward(self, x):
+        base_out = self.base(x)
+        delta = self.lora_B(self.lora_A(self.dropout(x))) * self.scaling
+        out = base_out + delta
+        return self.log_soft(out)
+
+
+def build_expert(config: MoEConfig, input_size: int, output_size: int, hidden_size: int):
+    if config.expert_type == "mlp":
+        return MLP(config, input_size, output_size, hidden_size)
+    if config.expert_type == "lora":
+        return LoRAExpert(config, input_size, output_size, hidden_size)
+    raise ValueError(f"Unknown expert_type: {config.expert_type}")
+
+
 class MoE(nn.Module):
 
     """Call a Sparsely gated mixture of experts layer with 1-layer Feed-Forward networks as experts.
@@ -174,6 +233,16 @@ class MoE(nn.Module):
         self.use_bias = config.use_bias
         self.shared_experts = config.shared_experts
         self.use_temp = config.use_temp
+        self.expert_type = config.expert_type
+        self.use_instruction_router = config.use_instruction_router
+        self.router_instruction_dim = config.router_instruction_dim
+        self.instruction_router_scale = config.instruction_router_scale
+        self.instruction_router_fusion = config.instruction_router_fusion
+        self.use_semantic_expert_profiles = config.use_semantic_expert_profiles
+        self.semantic_profile_scale = config.semantic_profile_scale
+        self.semantic_profile_fusion = config.semantic_profile_fusion
+        self.semantic_profile_source = config.semantic_profile_source
+        self.semantic_profile_modalities = config.semantic_profile_modalities or ["txt"]
 
         # instantiate experts
         if self.router_type == 'disjoint':
@@ -185,15 +254,83 @@ class MoE(nn.Module):
         else:
             self.w_gate = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
             self.w_noise = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
+
+        if self.use_instruction_router:
+            if self.router_instruction_dim is None:
+                raise ValueError("router_instruction_dim must be set when use_instruction_router=True")
+            use_logit_bias = self.instruction_router_fusion in ["logit_bias", "both"]
+            use_input_add = self.instruction_router_fusion in ["input_add", "both"]
+
+            if use_logit_bias:
+                if self.router_type == 'disjoint':
+                    sub_experts = self.num_experts // self.num_modalities
+                    self.instruction_router = nn.ModuleList([
+                        nn.Linear(self.router_instruction_dim, sub_experts, bias=False)
+                        for _ in range(self.num_modalities)
+                    ])
+                elif self.router_type == 'permod':
+                    self.instruction_router = nn.ModuleList([
+                        nn.Linear(self.router_instruction_dim, self.num_experts, bias=False)
+                        for _ in range(self.num_modalities)
+                    ])
+                else:
+                    self.instruction_router = nn.Linear(self.router_instruction_dim, self.num_experts, bias=False)
+                for layer in self.instruction_router.modules():
+                    if isinstance(layer, nn.Linear):
+                        nn.init.zeros_(layer.weight)
+            else:
+                self.instruction_router = None
+
+            if use_input_add:
+                if self.router_type in ['disjoint', 'permod']:
+                    input_dim = self.input_size // self.num_modalities
+                    self.instruction_input_proj = nn.ModuleList([
+                        nn.Linear(self.router_instruction_dim, input_dim, bias=False)
+                        for _ in range(self.num_modalities)
+                    ])
+                else:
+                    self.instruction_input_proj = nn.Linear(self.router_instruction_dim, self.input_size, bias=False)
+                for layer in self.instruction_input_proj.modules():
+                    if isinstance(layer, nn.Linear):
+                        nn.init.zeros_(layer.weight)
+            else:
+                self.instruction_input_proj = None
+        else:
+            self.instruction_router = None
+            self.instruction_input_proj = None
+
+        semantic_profiles = config.semantic_profile_embeddings
+        if self.use_semantic_expert_profiles and self.semantic_profile_source == "patient":
+            if semantic_profiles is None:
+                raise ValueError("semantic_profile_embeddings must be set when use_semantic_expert_profiles=True")
+            self.register_buffer("semantic_profile_embeddings", semantic_profiles.detach().float())
+            profile_dim = semantic_profiles.size(-1)
+            if self.router_type in ['disjoint', 'permod']:
+                input_dim = self.input_size // self.num_modalities
+                self.semantic_input_proj = nn.ModuleList([
+                    nn.Linear(input_dim, profile_dim, bias=False)
+                    for _ in range(self.num_modalities)
+                ])
+            else:
+                self.semantic_input_proj = nn.Linear(self.input_size, profile_dim, bias=False)
+        elif self.use_semantic_expert_profiles:
+            if semantic_profiles is None:
+                raise ValueError("semantic_profile_embeddings must be set when use_semantic_expert_profiles=True")
+            self.register_buffer("semantic_profile_embeddings", semantic_profiles.detach().float())
+            self.semantic_input_proj = None
+        else:
+            self.semantic_profile_embeddings = None
+            self.semantic_input_proj = None
+
         if self.router_type == 'disjoint':
             self.experts = nn.ModuleList(
-                nn.ModuleList([MLP(config, self.input_size//self.num_modalities, self.output_size, self.hidden_size) for _ in range(self.num_experts//self.num_modalities)])
+                nn.ModuleList([build_expert(config, self.input_size//self.num_modalities, self.output_size, self.hidden_size) for _ in range(self.num_experts//self.num_modalities)])
                 for _ in range(self.num_modalities)
             )
         elif self.router_type == 'permod':
-            self.experts = nn.ModuleList([MLP(config, self.input_size//self.num_modalities, self.output_size, self.hidden_size) for _ in range(self.num_experts)])
+            self.experts = nn.ModuleList([build_expert(config, self.input_size//self.num_modalities, self.output_size, self.hidden_size) for _ in range(self.num_experts)])
         else:
-            self.experts = nn.ModuleList([MLP(config, self.input_size, self.output_size, self.hidden_size) for _ in range(self.num_experts)])
+            self.experts = nn.ModuleList([build_expert(config, self.input_size, self.output_size, self.hidden_size) for _ in range(self.num_experts)])
         
         if self.use_bias:
             if self.router_type == 'joint':
@@ -212,7 +349,7 @@ class MoE(nn.Module):
         if self.shared_experts > 0:
             # Shared experts operate on the original input (before dispatching)
             self.shared_mlps = nn.ModuleList([
-                MLP(config, self.input_size, self.output_size, self.hidden_size)
+                build_expert(config, self.input_size, self.output_size, self.hidden_size)
                 for _ in range(self.shared_experts)
             ])
             if self.normalized:
@@ -248,7 +385,7 @@ class MoE(nn.Module):
         eps = 1e-10
         # if only num_experts = 1
         if x.shape[0] == 1:
-            return torch.Tensor([0], device=x.device, dtype=x.dtype)
+            return torch.tensor([0], device=x.device, dtype=x.dtype)
         return x.float().var() / (x.float().mean()**2 + eps)
 
     def _gates_to_load(self, gates):
@@ -299,7 +436,108 @@ class MoE(nn.Module):
         prob = torch.where(is_in, prob_if_in, prob_if_out)
         return prob
 
-    def _get_logits(self, x, train, noise_epsilon, idx=None):
+    def _instruction_logits(self, instruction_embedding, batch_size, device, dtype, idx=None):
+        if self.instruction_router is None or instruction_embedding is None:
+            return None
+
+        instruction_embedding = self._prepare_instruction_embedding(
+            instruction_embedding,
+            batch_size=batch_size,
+            device=device,
+            dtype=dtype,
+        )
+
+        if idx is None:
+            logits = self.instruction_router(instruction_embedding)
+        else:
+            logits = self.instruction_router[idx](instruction_embedding)
+        return logits * self.instruction_router_scale
+
+    def _prepare_instruction_embedding(self, instruction_embedding, batch_size, device, dtype):
+        instruction_embedding = instruction_embedding.to(device=device, dtype=dtype)
+        if instruction_embedding.dim() == 1:
+            instruction_embedding = instruction_embedding.unsqueeze(0)
+        if instruction_embedding.size(0) == 1 and batch_size != 1:
+            instruction_embedding = instruction_embedding.expand(batch_size, -1)
+        elif instruction_embedding.size(0) != batch_size:
+            raise ValueError(
+                f"instruction_embedding batch size {instruction_embedding.size(0)} "
+                f"does not match router batch size {batch_size}"
+            )
+        return instruction_embedding
+
+    def _fuse_instruction_input(self, x, instruction_embedding, idx=None):
+        if self.instruction_input_proj is None or instruction_embedding is None:
+            return x
+
+        instruction_embedding = self._prepare_instruction_embedding(
+            instruction_embedding,
+            batch_size=x.size(0),
+            device=x.device,
+            dtype=x.dtype,
+        )
+        if idx is None:
+            instruction_delta = self.instruction_input_proj(instruction_embedding)
+        else:
+            instruction_delta = self.instruction_input_proj[idx](instruction_embedding)
+        return x + self.instruction_router_scale * instruction_delta
+
+    def _profile_bank_for_logits(self, num_logits, device, dtype):
+        profiles = self.semantic_profile_embeddings.to(device=device, dtype=dtype)
+        if profiles.size(0) >= num_logits:
+            return profiles[:num_logits]
+        repeats = int(np.ceil(num_logits / profiles.size(0)))
+        return profiles.repeat(repeats, 1)[:num_logits]
+
+    def _semantic_logits(self, x, idx=None, num_logits=None):
+        if self.semantic_input_proj is None or self.semantic_profile_embeddings is None:
+            return None
+
+        if idx is None:
+            projected = self.semantic_input_proj(x)
+        else:
+            projected = self.semantic_input_proj[idx](x)
+
+        profiles = self._profile_bank_for_logits(
+            num_logits=num_logits,
+            device=x.device,
+            dtype=projected.dtype,
+        )
+        projected = F.normalize(projected, dim=-1)
+        profiles = F.normalize(profiles, dim=-1)
+        return (projected @ profiles.t()) * self.semantic_profile_scale
+
+    def _apply_semantic_logits(self, logits, x, idx=None):
+        semantic_logits = self._semantic_logits(x, idx=idx, num_logits=logits.size(1))
+        if semantic_logits is None:
+            return logits, None
+        if self.semantic_profile_fusion == "replace":
+            return semantic_logits, semantic_logits
+        return logits + semantic_logits, semantic_logits
+
+    def _external_semantic_logits(self, semantic_profile_logits, logits, modality=None):
+        if semantic_profile_logits is None:
+            return None
+        if modality is not None and modality not in self.semantic_profile_modalities:
+            return None
+
+        external_logits = semantic_profile_logits.to(device=logits.device, dtype=logits.dtype)
+        if external_logits.size(1) < logits.size(1):
+            repeats = int(np.ceil(logits.size(1) / external_logits.size(1)))
+            external_logits = external_logits.repeat(1, repeats)
+        external_logits = external_logits[:, :logits.size(1)]
+        return external_logits * self.semantic_profile_scale
+
+    def _apply_external_semantic_logits(self, logits, semantic_profile_logits, modality=None):
+        external_logits = self._external_semantic_logits(semantic_profile_logits, logits, modality=modality)
+        if external_logits is None:
+            return logits
+        if self.semantic_profile_fusion == "replace":
+            return external_logits
+        return logits + external_logits
+
+    def _get_logits(self, x, train, noise_epsilon, idx=None, instruction_embedding=None, semantic_profile_logits=None, modality=None):
+        x = self._fuse_instruction_input(x, instruction_embedding, idx=idx)
         bias = None
         if idx is not None:
             w_gate = self.w_gate[idx].to(x.device)
@@ -344,6 +582,19 @@ class MoE(nn.Module):
                 dist = dist / temp
             clean_logits = torch.sigmoid(-dist)
 
+        clean_logits, semantic_logits = self._apply_semantic_logits(clean_logits, x, idx=idx)
+        clean_logits = self._apply_external_semantic_logits(clean_logits, semantic_profile_logits, modality=modality)
+
+        instruction_logits = self._instruction_logits(
+            instruction_embedding,
+            batch_size=x.size(0),
+            device=x.device,
+            dtype=clean_logits.dtype,
+            idx=idx,
+        )
+        if instruction_logits is not None:
+            clean_logits = clean_logits + instruction_logits
+
         # ---------- Noisy gating ----------
         if self.noisy_gating:
             raw_noise_stddev = x @ w_noise
@@ -354,20 +605,32 @@ class MoE(nn.Module):
                 noise = torch.randn_like(dist) * noise_stddev
                 noisy_dist = dist + noise
                 noisy_logits = 1.0 / (1.0 + noisy_dist.pow(self.poly_power))
+                noisy_logits, _ = self._apply_semantic_logits(noisy_logits, x, idx=idx)
+                noisy_logits = self._apply_external_semantic_logits(noisy_logits, semantic_profile_logits, modality=modality)
+                if instruction_logits is not None:
+                    noisy_logits = noisy_logits + instruction_logits
                 logits = noisy_logits
             elif self.gating == "student_t":
                 dist = torch.cdist(x, torch.t(w_gate))
                 noise = torch.randn_like(dist) * noise_stddev
                 noisy_dist = dist + noise
                 noisy_logits = 1.0 / ((1.0 + ((noisy_dist)**2)/self.student_degree)**((self.student_degree + 1)/2))
+                noisy_logits, _ = self._apply_semantic_logits(noisy_logits, x, idx=idx)
+                noisy_logits = self._apply_external_semantic_logits(noisy_logits, semantic_profile_logits, modality=modality)
+                if instruction_logits is not None:
+                    noisy_logits = noisy_logits + instruction_logits
                 logits = noisy_logits
             elif self.gating == "sigmoid":
                 score = x @ w_gate
+                if instruction_logits is not None:
+                    score = score + instruction_logits
                 noise = torch.randn_like(score) * noise_stddev
                 noisy_score = score + noise
                 if temp is not None:
                     noisy_score = noisy_score / temp
                 noisy_logits = torch.sigmoid(noisy_score)
+                noisy_logits, _ = self._apply_semantic_logits(noisy_logits, x, idx=idx)
+                noisy_logits = self._apply_external_semantic_logits(noisy_logits, semantic_profile_logits, modality=modality)
                 logits = noisy_logits
             elif self.gating == "sigmoid_dist":
                 dist = torch.cdist(x, torch.t(w_gate))
@@ -376,6 +639,10 @@ class MoE(nn.Module):
                 if temp is not None:
                     noisy_dist = noisy_dist / temp
                 noisy_logits = torch.sigmoid(noisy_dist)
+                noisy_logits, _ = self._apply_semantic_logits(noisy_logits, x, idx=idx)
+                noisy_logits = self._apply_external_semantic_logits(noisy_logits, semantic_profile_logits, modality=modality)
+                if instruction_logits is not None:
+                    noisy_logits = noisy_logits + instruction_logits
                 logits = noisy_logits
             else:
                 noise = torch.randn_like(clean_logits) * noise_stddev
@@ -397,9 +664,13 @@ class MoE(nn.Module):
         return logits, clean_logits, noisy_logits, noise_stddev
 
     def _top_k_gating(self, logits, clean_logits, noisy_logits, noise_stddev, k):
-        top_logits, top_indices = logits.topk(min(k + 1, self.num_experts), dim=1)
-        top_k_logits = top_logits[:, :k]
-        top_k_indices = top_indices[:, :k]
+        # For disjoint routing, logits only cover the local expert group for one
+        # modality, so use logits.size(1) instead of the global expert count.
+        num_available_experts = logits.size(1)
+        effective_k = min(k, num_available_experts)
+        top_logits, top_indices = logits.topk(min(effective_k + 1, num_available_experts), dim=1)
+        top_k_logits = top_logits[:, :effective_k]
+        top_k_indices = top_indices[:, :effective_k]
         if self.gating == 'softmax':
             if self.normalized:
                 top_k_gates = self.softmax(top_k_logits)
@@ -421,13 +692,13 @@ class MoE(nn.Module):
         zeros = torch.zeros_like(logits, dtype=top_k_gates.dtype, requires_grad=True)
         gates = zeros.scatter(1, top_k_indices, top_k_gates)
 
-        if self.noisy_gating and k < self.num_experts:
+        if self.noisy_gating and effective_k < num_available_experts:
             load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
         else:
             load = self._gates_to_load(gates)
         return gates, load
 
-    def noisy_top_k_gating(self, x, train, noise_epsilon=1e-2, modalities=None):
+    def noisy_top_k_gating(self, x, train, noise_epsilon=1e-2, modalities=None, instruction_embedding=None, semantic_profile_logits=None):
         """Multimodal noisy top-k gating.
           See paper: https://arxiv.org/abs/1701.06538.
           Args:
@@ -444,14 +715,29 @@ class MoE(nn.Module):
                 embeddings = torch.concat(x, dim=1)
             else:
                 embeddings = x
-            all_logits = self._get_logits(embeddings, train, noise_epsilon)
+            all_logits = self._get_logits(
+                embeddings,
+                train,
+                noise_epsilon,
+                instruction_embedding=instruction_embedding,
+                semantic_profile_logits=semantic_profile_logits,
+            )
             logits, clean_logits, noisy_logits, noise_stddev = all_logits[0], all_logits[1], all_logits[2], all_logits[3]
             gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
             return gates, load
         else:
             all_gates, all_loads = [], []
             for i in range(self.num_modalities):
-                all_logits = self._get_logits(x[i], train, noise_epsilon, idx=i)
+                modality = modalities[i] if modalities is not None else None
+                all_logits = self._get_logits(
+                    x[i],
+                    train,
+                    noise_epsilon,
+                    idx=i,
+                    instruction_embedding=instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                    modality=modality,
+                )
                 logits, clean_logits, noisy_logits, noise_stddev = all_logits[0], all_logits[1], all_logits[2], all_logits[3]
                 if self.router_type == 'permod':
                     gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
@@ -516,8 +802,14 @@ class MoE(nn.Module):
             out = out - np.log(2)  # normalize by number of components in the mixture
         return out
 
-    def forward(self, x, train=True, loss_coef=1e-2, modalities=None):
-        gates, load = self.noisy_top_k_gating(x, train, modalities=modalities)
+    def forward(self, x, train=True, loss_coef=1e-2, modalities=None, instruction_embedding=None, semantic_profile_logits=None):
+        gates, load = self.noisy_top_k_gating(
+            x,
+            train,
+            modalities=modalities,
+            instruction_embedding=instruction_embedding,
+            semantic_profile_logits=semantic_profile_logits,
+        )
         loss = self._compute_loss(gates, load, loss_coef)
 
         # global shared output: always computed once on full input

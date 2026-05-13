@@ -122,8 +122,8 @@ def trainer_irg(
                 else:
                     modality_list, labels = batch
                 # Move to device
-                modality_list = [mod.to(device) for mod in modality_list]
-                labels = labels.to(device)
+                modality_list = [mod.to(device, non_blocking=True) for mod in modality_list]
+                labels = labels.to(device, non_blocking=True)
                 result = model(modality_list, labels=labels)
                 if isinstance(result, tuple):
                     loss, balance_loss = result

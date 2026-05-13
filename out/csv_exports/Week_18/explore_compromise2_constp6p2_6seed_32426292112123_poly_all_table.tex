@@ -1,0 +1,24 @@
+\begin{table*}[h]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccccc}
+\toprule
+& & \multicolumn{4}{c}{Poly} & \multicolumn{4}{c}{Unnorm Poly} \\
+\cmidrule(lr){3-6} \cmidrule(lr){7-10}
+Task & Metric & Joint & PerMod & Joint+Shared & PerMod+Shared & Joint & PerMod & Joint+Shared & PerMod+Shared \\
+\midrule
+\multirow{2}{*}{IHM} & AUC & 81.165 $\pm$ 0.333 & 80.553 $\pm$ 1.171 & \underline{81.197 $\pm$ 0.414} & 80.826 $\pm$ 0.522 & 81.165 $\pm$ 0.264 & 79.739 $\pm$ 0.454 & 80.938 $\pm$ 0.421 & \textbf{81.286 $\pm$ 0.596} \\
+ & F1 & 46.463 $\pm$ 3.090 & 45.539 $\pm$ 3.675 & 45.651 $\pm$ 3.288 & 41.812 $\pm$ 2.199 & \underline{47.933 $\pm$ 1.193} & \textbf{48.057 $\pm$ 1.758} & 47.736 $\pm$ 1.468 & 40.678 $\pm$ 5.259 \\
+\midrule
+\multirow{2}{*}{LOS} & AUC & \textbf{82.230 $\pm$ 0.305} & 80.991 $\pm$ 0.988 & 82.183 $\pm$ 0.334 & 81.938 $\pm$ 0.216 & 82.103 $\pm$ 0.361 & 81.267 $\pm$ 0.262 & \underline{82.206 $\pm$ 0.441} & 81.846 $\pm$ 0.238 \\
+ & F1 & 73.191 $\pm$ 0.668 & 73.611 $\pm$ 0.639 & 73.380 $\pm$ 0.575 & \textbf{73.883 $\pm$ 0.887} & 73.496 $\pm$ 0.520 & 73.523 $\pm$ 0.356 & 73.328 $\pm$ 0.687 & \underline{73.754 $\pm$ 0.721} \\
+\midrule
+\multirow{2}{*}{PHE} & AUC-w & \textbf{71.128 $\pm$ 0.516} & 70.315 $\pm$ 0.476 & \underline{71.084 $\pm$ 0.552} & 70.712 $\pm$ 0.245 & 70.869 $\pm$ 0.172 & 69.652 $\pm$ 0.551 & 70.901 $\pm$ 0.425 & 70.938 $\pm$ 0.379 \\
+ & F1 & 31.670 $\pm$ 1.027 & \textbf{32.620 $\pm$ 1.423} & 31.347 $\pm$ 0.877 & \underline{32.075 $\pm$ 1.185} & 30.657 $\pm$ 1.321 & 31.404 $\pm$ 1.112 & 30.840 $\pm$ 1.017 & 31.567 $\pm$ 0.914 \\
+\bottomrule
+\end{tabular}
+}
+\caption{Effect of routing strategy and shared experts for polynomial and unnormalized polynomial gating under exploratory seeds $\{32,42,62,92,112,123\}$, ratio $1.0$, with fixed powers $p_\text{norm}=6$ and $p_\text{unnorm}=2$. Best is \textbf{bold} and second-best is \underline{underlined}.}
+\label{tab:explore_compromise2_constp6p2_6seed_32426292112123_poly_all_table}
+\end{table*}

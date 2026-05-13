@@ -169,23 +169,35 @@ def get_pam_dataloaders(args):
     inv_freq = 1.0 / class_counts
     class_weights = inv_freq / inv_freq.sum() * len(inv_freq)
 
+    pam_loader_workers = min(4, os.cpu_count() or 1)
+    pam_loader_kwargs = {
+        "num_workers": pam_loader_workers,
+        "pin_memory": torch.cuda.is_available(),
+    }
+    if pam_loader_workers > 0:
+        pam_loader_kwargs["persistent_workers"] = True
+        pam_loader_kwargs["prefetch_factor"] = 2
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.train_batch_size,
         shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        **pam_loader_kwargs,
     )
     val_loader = DataLoader(
         PAMDataset(val_data, args.tt_max),
         batch_size=args.eval_batch_size,
         shuffle=False,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        **pam_loader_kwargs,
     )
     test_loader = DataLoader(
         PAMDataset(test_data, args.tt_max),
         batch_size=args.eval_batch_size,
         shuffle=False,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        **pam_loader_kwargs,
     )
     return train_loader, val_loader, test_loader, class_weights, modality_dims
 
@@ -285,6 +297,13 @@ def main():
         else:
             BioBert, tokenizer = None, None
 
+        if args.use_instruction_router:
+            if BioBert is None:
+                raise ValueError("--use_instruction_router requires a modeltype that includes Text.")
+            args.router_instruction_dim = BioBert.config.hidden_size
+        else:
+            args.router_instruction_dim = None
+
         from preprocessing.data_mimiciv import data_perpare
 
         # train_dataset, train_sampler, train_dataloader = data_perpare(args, 'train', tokenizer)
@@ -349,7 +368,8 @@ def main():
             model = TSMixed(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, ts_seq_num=args.tt_max)
         else:
             model = MULTCrossModel(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, orig_d_txt=768,
-                                ts_seq_num=args.tt_max, text_seq_num=args.num_of_notes, Biobert=BioBert)
+                                ts_seq_num=args.tt_max, text_seq_num=args.num_of_notes, Biobert=BioBert,
+                                tokenizer=tokenizer)
     elif args.dataset == "pam":
         modality_dims = pam_modality_dims
         # Ensure cross_method is set (from args)

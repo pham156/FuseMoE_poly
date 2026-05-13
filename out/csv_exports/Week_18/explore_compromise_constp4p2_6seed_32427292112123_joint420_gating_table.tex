@@ -1,0 +1,21 @@
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccccc}
+\toprule
+Task & Metric & Softmax & Gaussian & Laplace & Poly & Unnorm Poly \\
+\midrule
+\multirow{2}{*}{IHM} & AUC & 81.111 $\pm$ 0.338 & 81.004 $\pm$ 0.566 & 81.149 $\pm$ 0.388 & \underline{81.182 $\pm$ 0.360} & \textbf{81.184 $\pm$ 0.230} \\
+ & F1 & 46.691 $\pm$ 3.904 & 47.675 $\pm$ 4.191 & 46.455 $\pm$ 3.752 & \underline{47.979 $\pm$ 2.123} & \textbf{48.508 $\pm$ 1.333} \\
+\midrule
+\multirow{2}{*}{LOS} & AUC & 81.927 $\pm$ 0.451 & 81.882 $\pm$ 0.379 & \textbf{81.990 $\pm$ 0.533} & 81.892 $\pm$ 0.471 & \underline{81.930 $\pm$ 0.689} \\
+ & F1 & 73.112 $\pm$ 0.611 & \underline{73.245 $\pm$ 0.817} & 72.905 $\pm$ 0.855 & 73.177 $\pm$ 0.807 & \textbf{73.329 $\pm$ 0.579} \\
+\midrule
+\multirow{2}{*}{PHE} & AUC-w & \textbf{71.166 $\pm$ 0.537} & 71.118 $\pm$ 0.484 & 71.124 $\pm$ 0.499 & \underline{71.141 $\pm$ 0.520} & 70.867 $\pm$ 0.170 \\
+ & F1 & \textbf{31.636 $\pm$ 0.953} & 30.977 $\pm$ 0.889 & 31.090 $\pm$ 0.953 & \underline{31.201 $\pm$ 0.596} & 30.482 $\pm$ 1.067 \\
+\bottomrule
+\end{tabular}
+\caption{Exploratory comparison under joint routing with expert setting $4\ 2\ 0$ using seeds $\{32,42,72,92,112,123\}$, fixed polynomial powers ($p_\text{norm}=4$, $p_\text{unnorm}=2$). Best is \textbf{bold}, second-best is \underline{underlined}.}
+\label{tab:explore_compromise_constp4p2_6seed_32427292112123_joint420_gating_table}
+\end{table}

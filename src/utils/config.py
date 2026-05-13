@@ -46,7 +46,23 @@ class MoEConfig:
         normalized = True,
         use_bias = False,
         shared_experts = 0,
-        use_temp = False
+        use_temp = False,
+        expert_type = "mlp",
+        lora_rank = 8,
+        lora_alpha = 16.0,
+        lora_dropout = 0.0,
+        freeze_expert_base = True,
+        use_instruction_router = False,
+        router_instruction_dim = None,
+        instruction_router_scale = 1.0,
+        instruction_router_fusion = "logit_bias",
+        use_semantic_expert_profiles = False,
+        semantic_profile_embeddings = None,
+        semantic_profile_scale = 1.0,
+        semantic_profile_fusion = "add",
+        semantic_profile_source = "patient",
+        semantic_profile_note_pooling = "max",
+        semantic_profile_modalities = None
     ):
         # Input
         self.vocab_size = vocab_size
@@ -73,6 +89,22 @@ class MoEConfig:
         self.use_bias = use_bias
         self.shared_experts = shared_experts
         self.use_temp = use_temp
+        self.expert_type = expert_type
+        self.lora_rank = lora_rank
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+        self.freeze_expert_base = freeze_expert_base
+        self.use_instruction_router = use_instruction_router
+        self.router_instruction_dim = router_instruction_dim
+        self.instruction_router_scale = instruction_router_scale
+        self.instruction_router_fusion = instruction_router_fusion
+        self.use_semantic_expert_profiles = use_semantic_expert_profiles
+        self.semantic_profile_embeddings = semantic_profile_embeddings
+        self.semantic_profile_scale = semantic_profile_scale
+        self.semantic_profile_fusion = semantic_profile_fusion
+        self.semantic_profile_source = semantic_profile_source
+        self.semantic_profile_note_pooling = semantic_profile_note_pooling
+        self.semantic_profile_modalities = semantic_profile_modalities
         
         # image
         self.image_size = image_size
