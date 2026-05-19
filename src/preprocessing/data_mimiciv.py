@@ -170,6 +170,7 @@ class TSNote_Irg(Dataset):
         if 'Text' in self.modeltype and not data_detail['text_missing']:
             text_emb = data_detail['text_embeddings']
             text_emb = torch.tensor(text_emb, dtype=torch.float)
+            note_texts = list(text)
 
             text_time_to_end=[1-t/self.tt_max for t in text_time_to_end]
             text_time_mask=[1]*len(text_time_to_end)
@@ -206,18 +207,21 @@ class TSNote_Irg(Dataset):
                 atten_mask = atten_mask[-self.num_of_notes:]
                 text_time_to_end = text_time_to_end[-self.num_of_notes:]
                 text_time_mask = text_time_mask[-self.num_of_notes:]
+                note_texts = note_texts[-self.num_of_notes:]
             else:
                 text_emb=text_emb[:self.num_of_notes]
                 text_token = text_token[:self.num_of_notes]
                 atten_mask = atten_mask[:self.num_of_notes]
                 text_time_to_end = text_time_to_end[:self.num_of_notes]
                 text_time_mask = text_time_mask[:self.num_of_notes]
+                note_texts = note_texts[:self.num_of_notes]
         else:
             text_token = [torch.zeros(100) for _ in range(5)]
             atten_mask = [torch.zeros(100) for _ in range(5)]
             text_emb = [torch.zeros(768)]
             text_time_to_end = torch.zeros(1)
             text_time_mask = torch.ones(1)
+            note_texts = []
 
         if 'CXR' in self.modeltype and not data_detail['cxr_missing']:
             cxr_feats = data_detail['cxr_feats']
@@ -263,16 +267,18 @@ class TSNote_Irg(Dataset):
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label}
         elif self.modeltype == 'TS_Text':
             return {'idx': idx,'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label":label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
-            'note_time':text_time_to_end, 'text_time_mask': text_time_mask}
+            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts}
         elif self.modeltype == 'TS_CXR_Text':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label": label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
             'note_time': text_time_to_end, 'text_time_mask': text_time_mask, 'text_missing': data_detail['text_missing'],
-             'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'cxr_missing': data_detail['cxr_missing'], 'ecg_missing': data_detail['ecg_missing']}
+             'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'cxr_missing': data_detail['cxr_missing'], 'ecg_missing': data_detail['ecg_missing'],
+             'note_texts': note_texts}
         elif self.modeltype == 'TS_CXR_Text_ECG':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label": label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
             'note_time': text_time_to_end, 'text_time_mask': text_time_mask, 'text_missing': data_detail['text_missing'],
              'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'cxr_missing': data_detail['cxr_missing'],
-             'ecg_feats': ecg_feats, 'ecg_time': ecg_time_to_end, 'ecg_time_mask': ecg_time_mask, 'ecg_missing': data_detail['ecg_missing']}    
+             'ecg_feats': ecg_feats, 'ecg_time': ecg_time_to_end, 'ecg_time_mask': ecg_time_mask, 'ecg_missing': data_detail['ecg_missing'],
+             'note_texts': note_texts}    
 
     def __len__(self):
         return len(self.data)
@@ -370,6 +376,11 @@ def TextTSIrgcollate_fn(batch):
     else:
         ecg_feats, ecg_time, ecg_time_mask = None, None, None
 
+    metadata = {
+        "sample_ids": [example.get("idx", "") for example in batch],
+        "note_texts": [example.get("note_texts", []) for example in batch],
+    }
+
     return ts_input_sequences, ts_mask_sequences, ts_tt, reg_ts_input, \
          input_ids, attn_mask, text_emb, note_time, note_time_mask, cxr_feats, cxr_time, cxr_time_mask, ecg_feats, \
-            ecg_time, ecg_time_mask, label, cxr_missing, text_missing, ecg_missing
+            ecg_time, ecg_time_mask, label, cxr_missing, text_missing, ecg_missing, metadata

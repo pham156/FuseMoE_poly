@@ -56,14 +56,14 @@ def default_expert_profiles(profile_set):
             "pulmonary edema, respiratory failure, and chest X-ray lung findings."
         ),
         (
+            "Renal and metabolic expert. Focuses on kidney function and metabolic "
+            "instability including creatinine, blood urea nitrogen, urine output, "
+            "electrolyte imbalance, acidosis, alkalosis, glucose, and lactate."
+        ),
+        (
             "Infection and inflammation expert. Focuses on sepsis, fever, antibiotics, "
             "white blood cell count, infection source, inflammatory response, and "
             "clinical deterioration from infection."
-        ),
-        (
-            "General severity and chronic disease expert. Focuses on ICU severity, "
-            "multi-organ failure, frailty, comorbidities, poor prognosis, prolonged "
-            "recovery, and overall patient instability."
         ),
     ]
 
@@ -390,6 +390,33 @@ class MULTCrossModel(nn.Module):
         else:
             raise ValueError("Unknown task")
 
+        self.use_missing_modality_recon = getattr(args, "use_missing_modality_recon", False)
+        self.missing_modality_recon_coef = getattr(args, "missing_modality_recon_coef", 0.1)
+        self.missing_modality_recon_targets = [
+            target.strip().lower()
+            for target in getattr(args, "missing_modality_recon_targets", "cxr,ecg").split(",")
+            if target.strip()
+        ]
+        self.last_missing_recon_loss = None
+        self.last_missing_recon_details = {}
+        if self.use_missing_modality_recon:
+            recon_hidden = getattr(args, "missing_modality_recon_hidden", 256)
+            valid_recon_targets = {"ts", "text", "txt", "cxr", "ecg"}
+            unknown_targets = set(self.missing_modality_recon_targets) - valid_recon_targets
+            if unknown_targets:
+                raise ValueError(f"Unknown missing reconstruction targets: {sorted(unknown_targets)}")
+            self.missing_recon_heads = nn.ModuleDict()
+            for target in self.missing_modality_recon_targets:
+                canonical_target = "text" if target == "txt" else target
+                self.missing_recon_heads[canonical_target] = nn.Sequential(
+                    nn.Linear(args.embed_dim, recon_hidden),
+                    nn.ReLU(),
+                    nn.Dropout(args.dropout),
+                    nn.Linear(recon_hidden, args.embed_dim),
+                )
+        else:
+            self.missing_recon_heads = nn.ModuleDict()
+
     def get_network(self, self_type='ts_mem', layers=-1):
         if self_type == 'ts_mem':
             if self.irregular_learn_emb_ts:
@@ -496,10 +523,84 @@ class MULTCrossModel(nn.Module):
             pooled[no_valid_notes] = 0.0
         return pooled
 
+    def _pool_modality_embedding(self, value):
+        return value.float().mean(dim=0)
+
+    def _observed_mask(self, missing, batch_size, device):
+        if missing is None:
+            return torch.ones(batch_size, dtype=torch.bool, device=device)
+        return ~missing.to(device=device).bool()
+
+    def _compute_missing_modality_recon_loss(self, modality_embeddings, missing_masks):
+        if not self.use_missing_modality_recon:
+            self.last_missing_recon_loss = None
+            self.last_missing_recon_details = {}
+            return None
+
+        available = {
+            name: self._pool_modality_embedding(value)
+            for name, value in modality_embeddings.items()
+            if value is not None
+        }
+        if len(available) < 2:
+            self.last_missing_recon_loss = None
+            self.last_missing_recon_details = {}
+            return None
+
+        batch_size = next(iter(available.values())).shape[0]
+        device = next(iter(available.values())).device
+        observed_masks = {
+            name: self._observed_mask(missing_masks.get(name), batch_size, device)
+            for name in available
+        }
+
+        losses = []
+        details = {}
+        for raw_target in self.missing_modality_recon_targets:
+            target = "text" if raw_target == "txt" else raw_target
+            if target not in available or target not in self.missing_recon_heads:
+                continue
+
+            source_terms = []
+            source_masks = []
+            for source_name, source_value in available.items():
+                if source_name == target:
+                    continue
+                source_terms.append(source_value)
+                source_masks.append(observed_masks[source_name].float().unsqueeze(1))
+            if not source_terms:
+                continue
+
+            stacked_sources = torch.stack(source_terms, dim=0)
+            stacked_masks = torch.stack(source_masks, dim=0)
+            source_count = stacked_masks.sum(dim=0).clamp_min(1.0)
+            source_embedding = (stacked_sources * stacked_masks).sum(dim=0) / source_count
+
+            target_mask = observed_masks[target]
+            if not target_mask.any():
+                continue
+
+            pred = self.missing_recon_heads[target](source_embedding)
+            target_embedding = available[target].detach()
+            per_sample = F.mse_loss(pred, target_embedding, reduction="none").mean(dim=1)
+            target_loss = per_sample[target_mask].mean()
+            losses.append(target_loss)
+            details[target] = float(target_loss.detach().cpu().item())
+
+        if not losses:
+            self.last_missing_recon_loss = None
+            self.last_missing_recon_details = {}
+            return None
+
+        recon_loss = torch.stack(losses).mean()
+        self.last_missing_recon_loss = recon_loss.detach()
+        self.last_missing_recon_details = details
+        return recon_loss
+
     def forward(self, x_ts, x_ts_mask, ts_tt_list, cxr_missing=None, text_missing=None, ecg_missing=None, input_ids_sequences=None,
                 attn_mask_sequences=None, text_emb=None, note_time_list=None, note_time_mask_list=None,
                 labels=None, reg_ts=None, cxr_feats=None, cxr_time=None, cxr_time_mask=None, ecg_feats=None,
-                ecg_time=None, ecg_time_mask=None):
+                ecg_time=None, ecg_time_mask=None, router_organ_targets=None):
         """
         dimension [batch_size, seq_len, n_features]
 
@@ -545,6 +646,7 @@ class MULTCrossModel(nn.Module):
                     raise ValueError("Unknown time series type")
             proj_x_ts += self.token_type_embeddings(torch.zeros((self.args.tt_max, x_ts.shape[0]), dtype=torch.long, device=x_ts.device))
 
+        missing_recon_loss = None
         mod_count = 1
         if "Text" in self.modeltype:
             # compute irregular clinical notes attention
@@ -622,6 +724,29 @@ class MULTCrossModel(nn.Module):
                 proj_x_ecg[:, missing_indices, :] = torch.zeros((self.args.tt_max, len(missing_indices), self.args.embed_dim), dtype=torch.float16, device=x_ts.device)
             mod_count += 1
 
+        if self.use_missing_modality_recon:
+            modality_embeddings = {}
+            missing_masks = {}
+            if "TS" in self.modeltype:
+                modality_embeddings["ts"] = proj_x_ts
+                missing_masks["ts"] = None
+            if "Text" in self.modeltype:
+                modality_embeddings["text"] = proj_x_txt
+                missing_masks["text"] = text_missing
+            if "CXR" in self.modeltype:
+                modality_embeddings["cxr"] = proj_x_cxr
+                missing_masks["cxr"] = cxr_missing
+            if "ECG" in self.modeltype:
+                modality_embeddings["ecg"] = proj_x_ecg
+                missing_masks["ecg"] = ecg_missing
+            missing_recon_loss = self._compute_missing_modality_recon_loss(
+                modality_embeddings,
+                missing_masks,
+            )
+        else:
+            self.last_missing_recon_loss = None
+            self.last_missing_recon_details = {}
+
         balance_loss = None
         if self.cross_method in ["self_cross", "moe", "hme"]:
             if "Text" not in self.modeltype:
@@ -632,6 +757,7 @@ class MULTCrossModel(nn.Module):
                     ['txt', 'ts'],
                     instruction_embedding=self.router_instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
                 )
             elif self.modeltype == "TS_CXR":
                 hiddens, balance_loss = self.trans_self_cross_ts_txt(
@@ -639,6 +765,7 @@ class MULTCrossModel(nn.Module):
                     ['cxr', 'ts'],
                     instruction_embedding=self.router_instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
                 )
             elif self.modeltype == "TS_CXR_Text":
                 hiddens, balance_loss = self.trans_self_cross_ts_txt(
@@ -646,6 +773,7 @@ class MULTCrossModel(nn.Module):
                     ['ts', 'cxr', 'txt'],
                     instruction_embedding=self.router_instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
                 )
             elif self.modeltype == "TS_CXR_Text_ECG":
                 hiddens, balance_loss = self.trans_self_cross_ts_txt(
@@ -653,6 +781,7 @@ class MULTCrossModel(nn.Module):
                     ['ts', 'cxr', 'txt', 'ecg'],
                     instruction_embedding=self.router_instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
                 )
 
             if hiddens is None:
@@ -692,6 +821,8 @@ class MULTCrossModel(nn.Module):
         if 'ihm' in self.task or 'los' in self.task:
             if labels!=None:
                 task_loss = self.loss_fct1(output, labels)
+                if missing_recon_loss is not None:
+                    task_loss = task_loss + self.missing_modality_recon_coef * missing_recon_loss
                 return task_loss, balance_loss
             return torch.nn.functional.softmax(output,dim=-1)[:,1]
 
@@ -699,6 +830,8 @@ class MULTCrossModel(nn.Module):
             if labels!=None:
                 labels=labels.float()
                 task_loss = self.loss_fct1(output, labels)
+                if missing_recon_loss is not None:
+                    task_loss = task_loss + self.missing_modality_recon_coef * missing_recon_loss
                 return task_loss, balance_loss
             return torch.nn.functional.sigmoid(output)
 

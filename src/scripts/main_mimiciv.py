@@ -270,7 +270,8 @@ def main():
 
     device = accelerator.device
     print(device)
-    os.makedirs(args.output_dir, exist_ok = True)
+    if not getattr(args, "disable_run_folder_save", False):
+        os.makedirs(args.output_dir, exist_ok = True)
     if args.tensorboard_dir!=None:
         writer = SummaryWriter(args.tensorboard_dir)
     else:
@@ -423,7 +424,10 @@ def main():
         
 
     print(f"New maximum memory allocated on GPU: {torch.cuda.max_memory_allocated(device)} bytes")
-    print(f'Results saved in:\n{args.ck_file_path}')
+    if getattr(args, "disable_run_folder_save", False):
+        print("Results not saved to run_folder (--disable_run_folder_save).")
+    else:
+        print(f'Results saved in:\n{args.ck_file_path}')
 
 
 if __name__ == "__main__":

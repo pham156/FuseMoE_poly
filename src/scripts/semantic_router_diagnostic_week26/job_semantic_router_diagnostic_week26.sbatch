@@ -6,8 +6,8 @@
 #SBATCH --mem=64G
 #SBATCH -t 4:00:00
 #SBATCH -J sem_diag26_%j
-#SBATCH -o /home/pham156/MoE/FuseMoE_poly/out/Week_26/sem_diag26_%j.out
-#SBATCH -e /home/pham156/MoE/FuseMoE_poly/out/Week_26/sem_diag26_%j.err
+#SBATCH -o /home/pham156/MoE/FuseMoE_poly/out/Week_26/%j_sem_diag26.out
+#SBATCH -e /home/pham156/MoE/FuseMoE_poly/out/Week_26/%j_sem_diag26.err
 
 # Avoid set -u because Conda hooks can read unset env vars.
 set -eo pipefail
@@ -144,7 +144,9 @@ for SEED in "${SEEDS[@]}"; do
       --semantic_profile_set icu_organ_system \
       --semantic_profile_source patient \
       --semantic_profile_fusion "$SEMANTIC_PROFILE_FUSION" \
-      --semantic_profile_scale "$SEMANTIC_PROFILE_SCALE"
+      --semantic_profile_scale "$SEMANTIC_PROFILE_SCALE" \
+      --log_router_diagnostics \
+      --router_diagnostics_path "$OUTPUT_DIR/router_diagnostics_test.csv"
 
     echo "Finished semantic diagnostic run task=$TASK ratio=$RATIO seed=$SEED fusion=$SEMANTIC_PROFILE_FUSION scale=$SEMANTIC_PROFILE_SCALE"
     echo "----------------------------------------------------------------"

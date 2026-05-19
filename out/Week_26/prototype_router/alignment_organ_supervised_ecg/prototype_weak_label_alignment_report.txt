@@ -1,0 +1,19 @@
+===== ratio 1p0 =====
+layer 0
+  cardiovascular  n= 391 top_avg=e1 top_lift=e1 pos=[0.3003,0.4776,0.1015,0.1206] lift=[+0.0000,+0.0001,-0.0000,-0.0001]
+  respiratory     n= 600 top_avg=e1 top_lift=e0 pos=[0.3003,0.4776,0.1015,0.1206] lift=[+0.0002,+0.0000,-0.0001,-0.0001]
+  renal_metabolic n= 137 top_avg=e1 top_lift=e3 pos=[0.3003,0.4767,0.1017,0.1212] lift=[+0.0001,-0.0011,+0.0002,+0.0008]
+  infection       n= 176 top_avg=e1 top_lift=e3 pos=[0.3003,0.4771,0.1017,0.1210] lift=[+0.0000,-0.0007,+0.0002,+0.0005]
+
+layer 1
+  cardiovascular  n= 391 top_avg=e1 top_lift=e1 pos=[0.2996,0.4785,0.1014,0.1205] lift=[+0.0000,+0.0001,-0.0000,-0.0001]
+  respiratory     n= 600 top_avg=e1 top_lift=e0 pos=[0.2996,0.4784,0.1014,0.1205] lift=[+0.0001,+0.0001,-0.0001,-0.0001]
+  renal_metabolic n= 137 top_avg=e1 top_lift=e3 pos=[0.2997,0.4776,0.1016,0.1211] lift=[+0.0001,-0.0010,+0.0002,+0.0008]
+  infection       n= 176 top_avg=e1 top_lift=e3 pos=[0.2997,0.4780,0.1015,0.1208] lift=[+0.0000,-0.0006,+0.0002,+0.0004]
+
+layer 2
+  cardiovascular  n= 391 top_avg=e1 top_lift=e1 pos=[0.2993,0.4790,0.1014,0.1203] lift=[-0.0000,+0.0001,-0.0000,-0.0001]
+  respiratory     n= 600 top_avg=e1 top_lift=e1 pos=[0.2993,0.4790,0.1014,0.1203] lift=[+0.0001,+0.0001,-0.0000,-0.0001]
+  renal_metabolic n= 137 top_avg=e1 top_lift=e3 pos=[0.2994,0.4781,0.1015,0.1209] lift=[+0.0001,-0.0011,+0.0002,+0.0008]
+  infection       n= 176 top_avg=e1 top_lift=e3 pos=[0.2994,0.4784,0.1015,0.1207] lift=[+0.0001,-0.0007,+0.0002,+0.0005]
+

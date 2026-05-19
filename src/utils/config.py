@@ -62,7 +62,25 @@ class MoEConfig:
         semantic_profile_fusion = "add",
         semantic_profile_source = "patient",
         semantic_profile_note_pooling = "max",
-        semantic_profile_modalities = None
+        semantic_profile_modalities = None,
+        semantic_profile_layers = "all",
+        use_prototype_router = False,
+        prototype_router_dim = 256,
+        prototype_router_temperature = 1.0,
+        prototype_router_dense = False,
+        prototype_router_orth_coef = 0.0,
+        use_router_organ_supervision = False,
+        router_organ_supervision_coef = 1.0,
+        router_organ_supervision_layers = "all",
+        router_organ_supervision_class_balanced = False,
+        use_missing_modality_recon = False,
+        missing_modality_recon_coef = 0.1,
+        missing_modality_recon_targets = "cxr,ecg",
+        missing_modality_recon_hidden = 256,
+        router_z_loss_coef = 0.0,
+        router_z_loss_type = "logsumexp",
+        router_entropy_coef = 0.0,
+        dense_warmup_epochs = 0
     ):
         # Input
         self.vocab_size = vocab_size
@@ -105,6 +123,24 @@ class MoEConfig:
         self.semantic_profile_source = semantic_profile_source
         self.semantic_profile_note_pooling = semantic_profile_note_pooling
         self.semantic_profile_modalities = semantic_profile_modalities
+        self.semantic_profile_layers = semantic_profile_layers
+        self.use_prototype_router = use_prototype_router
+        self.prototype_router_dim = prototype_router_dim
+        self.prototype_router_temperature = prototype_router_temperature
+        self.prototype_router_dense = prototype_router_dense
+        self.prototype_router_orth_coef = prototype_router_orth_coef
+        self.use_router_organ_supervision = use_router_organ_supervision
+        self.router_organ_supervision_coef = router_organ_supervision_coef
+        self.router_organ_supervision_layers = router_organ_supervision_layers
+        self.router_organ_supervision_class_balanced = router_organ_supervision_class_balanced
+        self.use_missing_modality_recon = use_missing_modality_recon
+        self.missing_modality_recon_coef = missing_modality_recon_coef
+        self.missing_modality_recon_targets = missing_modality_recon_targets
+        self.missing_modality_recon_hidden = missing_modality_recon_hidden
+        self.router_z_loss_coef = router_z_loss_coef
+        self.router_z_loss_type = router_z_loss_type
+        self.router_entropy_coef = router_entropy_coef
+        self.dense_warmup_epochs = dense_warmup_epochs
         
         # image
         self.image_size = image_size

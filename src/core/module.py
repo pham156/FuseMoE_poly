@@ -486,14 +486,15 @@ class TransformerCrossEncoder(nn.Module):
                                                     relu_dropout=relu_dropout,
                                                     res_dropout=res_dropout,
                                                     attn_mask=attn_mask,
-                                                    num_modalities=num_modalities)
+                                                    num_modalities=num_modalities,
+                                                    layer_idx=layer)
             self.layers.append(new_layer)
 
         self.normalize = True
         if self.normalize:
             self.layer_norm = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(num_modalities)])
 
-    def forward(self, x_in_list, modality, instruction_embedding=None, semantic_profile_logits=None):
+    def forward(self, x_in_list, modality, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
         """
         Args:
             x_in_list (list of FloatTensor): embedded input of shape `(src_len, batch, embed_dim)`
@@ -524,6 +525,7 @@ class TransformerCrossEncoder(nn.Module):
                 modality,
                 instruction_embedding=instruction_embedding,
                 semantic_profile_logits=semantic_profile_logits,
+                router_organ_targets=router_organ_targets,
             ) #proj_x_txt, proj_x_ts
             if x_list is None:
                 return None, None
@@ -541,7 +543,7 @@ class TransformerCrossEncoder(nn.Module):
 
 class TransformerCrossEncoderLayer(nn.Module):
     def __init__(self, args, embed_dim, num_heads=4, attn_dropout=0.1, relu_dropout=0.1, res_dropout=0.1, 
-                 attn_mask=False, num_modalities=2):
+                 attn_mask=False, num_modalities=2, layer_idx=0):
         super().__init__()
         self.args = args
         self.embed_dim = embed_dim
@@ -584,6 +586,20 @@ class TransformerCrossEncoderLayer(nn.Module):
         self.pre_ffn_layer_norm = nn.ModuleList([nn.LayerNorm(self.embed_dim) for _ in range(num_modalities)])
         
         if args.cross_method == 'moe':
+            use_semantic_profiles = (
+                args.use_semantic_expert_profiles
+                and (
+                    getattr(args, "semantic_profile_layers", "all") == "all"
+                    or layer_idx == 0
+                )
+            )
+            use_router_organ_supervision = (
+                args.use_router_organ_supervision
+                and (
+                    getattr(args, "router_organ_supervision_layers", "all") == "all"
+                    or layer_idx == 0
+                )
+            )
             moe_config = MoEConfig(
             num_experts=args.num_of_experts[0],
             moe_input_size=args.tt_max * args.embed_dim * num_modalities,
@@ -609,13 +625,27 @@ class TransformerCrossEncoderLayer(nn.Module):
             router_instruction_dim=getattr(args, "router_instruction_dim", None),
             instruction_router_scale=args.instruction_router_scale,
             instruction_router_fusion=args.instruction_router_fusion,
-            use_semantic_expert_profiles=args.use_semantic_expert_profiles,
+            use_semantic_expert_profiles=use_semantic_profiles,
             semantic_profile_embeddings=getattr(args, "semantic_profile_embeddings", None),
             semantic_profile_scale=args.semantic_profile_scale,
             semantic_profile_fusion=args.semantic_profile_fusion,
             semantic_profile_source=args.semantic_profile_source,
             semantic_profile_note_pooling=args.semantic_profile_note_pooling,
-            semantic_profile_modalities=args.semantic_profile_modalities
+            semantic_profile_modalities=args.semantic_profile_modalities,
+            semantic_profile_layers=args.semantic_profile_layers,
+            use_prototype_router=args.use_prototype_router,
+            prototype_router_dim=args.prototype_router_dim,
+            prototype_router_temperature=args.prototype_router_temperature,
+            prototype_router_dense=args.prototype_router_dense,
+            prototype_router_orth_coef=args.prototype_router_orth_coef,
+            use_router_organ_supervision=use_router_organ_supervision,
+            router_organ_supervision_coef=args.router_organ_supervision_coef,
+            router_organ_supervision_layers=args.router_organ_supervision_layers,
+            router_organ_supervision_class_balanced=args.router_organ_supervision_class_balanced,
+            router_z_loss_coef=args.router_z_loss_coef,
+            router_z_loss_type=args.router_z_loss_type,
+            router_entropy_coef=args.router_entropy_coef,
+            dense_warmup_epochs=args.dense_warmup_epochs
             )
             
             self.moe = MoE(moe_config)
@@ -640,7 +670,7 @@ class TransformerCrossEncoderLayer(nn.Module):
 
             self.moe = HierarchicalMoE(moe_config)
         
-    def forward(self, x_list, modality, instruction_embedding=None, semantic_profile_logits=None):
+    def forward(self, x_list, modality, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
         """
         Args:
             x (List of Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -678,6 +708,7 @@ class TransformerCrossEncoderLayer(nn.Module):
                     modalities=modality,
                     instruction_embedding=instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
                 )
             else:
                 moe_out, balance_loss = self.moe(x_mod_in, modalities=modality)

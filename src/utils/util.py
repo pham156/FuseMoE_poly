@@ -47,6 +47,7 @@ def parse_args():
         "--file_path", type=str, default="Data", help="A path to dataset folder"
     )
     parser.add_argument("--output_dir", type=str, default="Checkpoints", help="Where to store the final model.")
+    parser.add_argument("--disable_run_folder_save", action="store_true", help="Do not create run_folder/checkpoint output directories for diagnostic runs.")
     parser.add_argument("--tensorboard_dir", type=str, default=None, help="Where to store the final model.")
 
     parser.add_argument("--seed", type=int, default=42, help="A seed for reproducible training.")
@@ -224,6 +225,33 @@ def parse_args():
         default=['txt'],
         help='For per-modality routers with --semantic_profile_source note, modalities that receive note-derived semantic logits.'
     )
+    parser.add_argument(
+        '--semantic_profile_layers',
+        default='all',
+        choices=['all', 'first'],
+        help='MoE layers that receive semantic profile router bias. first applies it only to layer 0.'
+    )
+    parser.add_argument('--use_prototype_router', action='store_true', help='Use learnable router-space expert prototypes instead of the linear router matrix.')
+    parser.add_argument('--prototype_router_dim', default=256, type=int, help='Latent dimension for learnable prototype routing.')
+    parser.add_argument('--prototype_router_temperature', default=1.0, type=float, help='Temperature used by prototype router softmax/top-k gates.')
+    parser.add_argument('--prototype_router_dense', action='store_true', help='Use dense prototype routing over all experts instead of top-k masking.')
+    parser.add_argument('--prototype_router_orth_coef', default=0.0, type=float, help='Coefficient for prototype orthogonality regularization inside MoE balance loss.')
+    parser.add_argument('--use_router_organ_supervision', action='store_true', help='Use weak note-derived organ labels to supervise router gate mass.')
+    parser.add_argument('--router_organ_supervision_coef', default=1.0, type=float, help='Coefficient for weak organ-router supervision inside MoE auxiliary loss.')
+    parser.add_argument('--router_organ_supervision_layers', default='all', choices=['all', 'first'], help='MoE layers that receive weak organ-router supervision.')
+    parser.add_argument('--router_organ_supervision_class_balanced', action='store_true', help='Apply inverse-frequency batch balancing to weak organ-router targets.')
+    parser.add_argument('--use_missing_modality_recon', action='store_true', help='Add embedding-level missing-modality reconstruction loss from observed modality embeddings.')
+    parser.add_argument('--missing_modality_recon_coef', default=0.1, type=float, help='Coefficient for embedding-level missing-modality reconstruction loss.')
+    parser.add_argument('--missing_modality_recon_targets', default='cxr,ecg', type=str, help='Comma-separated modality targets reconstructed from the other observed modalities, e.g. cxr,ecg,text.')
+    parser.add_argument('--missing_modality_recon_hidden', default=256, type=int, help='Hidden size for lightweight modality reconstruction heads.')
+    parser.add_argument('--router_z_loss_coef', default=0.0, type=float, help='Coefficient for router z-loss inside the MoE auxiliary loss. Default 0 keeps old behavior.')
+    parser.add_argument('--router_z_loss_type', default='logsumexp', choices=['logsumexp', 'squared_logits'], help='Router z-loss variant.')
+    parser.add_argument('--router_entropy_coef', default=0.0, type=float, help='Coefficient for negative router entropy regularization inside the MoE auxiliary loss. Positive values encourage softer gates.')
+    parser.add_argument('--dense_warmup_epochs', default=0, type=int, help='Use dense all-expert routing for the first N training epochs before switching back to top-k. Default 0 keeps old behavior.')
+    parser.add_argument('--log_router_diagnostics', action='store_true', help='Write per-sample router top-k diagnostics during test evaluation.')
+    parser.add_argument('--router_diagnostics_path', default=None, type=str, help='CSV path for router diagnostics. Defaults to output_dir/router_diagnostics_test.csv.')
+    parser.add_argument('--router_diagnostics_layers', default='last', choices=['last', 'all'], help='Write only the last MoE layer or all MoE layers in router diagnostics CSV.')
+    parser.add_argument('--router_diagnostics_max_text_chars', default=500, type=int, help='Maximum raw note characters stored per sample in router diagnostics CSV.')
     parser.add_argument('--lingshu_model_path', default=None, type=str, help='Path or Hugging Face id for Lingshu/Qwen-VL backbone used by the separate Lingshu pseudo-token model.')
     parser.add_argument('--lingshu_trust_remote_code', type=str2bool, default=True, help='Pass trust_remote_code to the Lingshu backbone loader.')
     parser.add_argument('--lingshu_freeze_backbone', type=str2bool, default=True, help='Freeze Lingshu backbone parameters before attaching/trainining LoRA adapters.')
@@ -234,6 +262,11 @@ def parse_args():
     parser.add_argument('--lingshu_lora_target_modules', nargs='*', default=['q_proj', 'k_proj', 'v_proj', 'o_proj'], help='Target module names for PEFT LoRA on the Lingshu backbone.')
     parser.add_argument('--lingshu_max_ts_tokens', default=48, type=int, help='Maximum time-series pseudo tokens passed to Lingshu.')
     parser.add_argument('--lingshu_pooling', default='mean', choices=['mean', 'last'], help='Pooling strategy over Lingshu hidden states for classification.')
+    parser.add_argument('--lingshu_architecture', default='pseudotoken', choices=['pseudotoken', 'organ_lora_moe'], help='Lingshu model variant. pseudotoken uses one shared LoRA adapter; organ_lora_moe uses organ-specific LoRA adapters as experts.')
+    parser.add_argument('--lingshu_moe_router', default='semantic_profile', choices=['semantic_profile', 'linear'], help='Router used by --lingshu_architecture organ_lora_moe.')
+    parser.add_argument('--lingshu_moe_top_k', default=2, type=int, help='Number of organ LoRA experts selected by the Lingshu MoE router.')
+    parser.add_argument('--lingshu_moe_expert_names', nargs='*', default=['cardiovascular', 'respiratory', 'renal_metabolic', 'neurological'], help='Names for organ-specific Lingshu LoRA expert adapters.')
+    parser.add_argument('--lingshu_moe_temperature', default=1.0, type=float, help='Temperature for Lingshu organ expert routing.')
 
     args = parser.parse_args()
     return args

@@ -35,6 +35,10 @@ def save_checkpoint(state, is_best, filename):
         print ("=> Validation Accuracy did not improve")
 
 def make_save_dir(args):
+    if getattr(args, "disable_run_folder_save", False):
+        args.ck_file_path = None
+        print("Run-folder save disabled.")
+        return
 
     output_dir=args.output_dir+"/"+args.task+"/"+args.modeltype+"/"
 

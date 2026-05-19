@@ -243,6 +243,20 @@ class MoE(nn.Module):
         self.semantic_profile_fusion = config.semantic_profile_fusion
         self.semantic_profile_source = config.semantic_profile_source
         self.semantic_profile_modalities = config.semantic_profile_modalities or ["txt"]
+        self.use_prototype_router = config.use_prototype_router
+        self.prototype_router_dim = config.prototype_router_dim
+        self.prototype_router_temperature = config.prototype_router_temperature
+        self.prototype_router_dense = config.prototype_router_dense
+        self.prototype_router_orth_coef = config.prototype_router_orth_coef
+        self.use_router_organ_supervision = config.use_router_organ_supervision
+        self.router_organ_supervision_coef = config.router_organ_supervision_coef
+        self.router_organ_supervision_class_balanced = config.router_organ_supervision_class_balanced
+        self.router_z_loss_coef = getattr(config, "router_z_loss_coef", 0.0)
+        self.router_z_loss_type = getattr(config, "router_z_loss_type", "logsumexp")
+        self.router_entropy_coef = getattr(config, "router_entropy_coef", 0.0)
+        self.dense_warmup_epochs = getattr(config, "dense_warmup_epochs", 0)
+        self.current_epoch = 0
+        self._last_router_logits_for_loss = None
 
         # instantiate experts
         if self.router_type == 'disjoint':
@@ -254,6 +268,36 @@ class MoE(nn.Module):
         else:
             self.w_gate = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
             self.w_noise = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
+
+        if self.use_prototype_router:
+            if self.router_type == 'disjoint':
+                sub_experts = self.num_experts // self.num_modalities
+                input_dim = self.input_size // self.num_modalities
+                self.prototype_query_proj = nn.ModuleList([
+                    self._build_prototype_query_proj(input_dim)
+                    for _ in range(self.num_modalities)
+                ])
+                self.router_prototypes = nn.ParameterList([
+                    nn.Parameter(torch.empty(sub_experts, self.prototype_router_dim))
+                    for _ in range(self.num_modalities)
+                ])
+            elif self.router_type == 'permod':
+                input_dim = self.input_size // self.num_modalities
+                self.prototype_query_proj = nn.ModuleList([
+                    self._build_prototype_query_proj(input_dim)
+                    for _ in range(self.num_modalities)
+                ])
+                self.router_prototypes = nn.ParameterList([
+                    nn.Parameter(torch.empty(self.num_experts, self.prototype_router_dim))
+                    for _ in range(self.num_modalities)
+                ])
+            else:
+                self.prototype_query_proj = self._build_prototype_query_proj(self.input_size)
+                self.router_prototypes = nn.Parameter(torch.empty(self.num_experts, self.prototype_router_dim))
+            self._reset_router_prototypes()
+        else:
+            self.prototype_query_proj = None
+            self.router_prototypes = None
 
         if self.use_instruction_router:
             if self.router_instruction_dim is None:
@@ -371,6 +415,31 @@ class MoE(nn.Module):
         self.register_buffer("std", torch.tensor([1.0]))
 
         assert(self.k <= self.num_experts)
+
+    def set_current_epoch(self, epoch):
+        self.current_epoch = int(epoch)
+
+    def _use_dense_warmup(self):
+        return (
+            self.training
+            and self.dense_warmup_epochs > 0
+            and self.current_epoch < self.dense_warmup_epochs
+        )
+
+    def _build_prototype_query_proj(self, input_dim):
+        return nn.Sequential(
+            nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, self.prototype_router_dim),
+            nn.GELU(),
+            nn.Linear(self.prototype_router_dim, self.prototype_router_dim),
+        )
+
+    def _reset_router_prototypes(self):
+        if isinstance(self.router_prototypes, nn.ParameterList):
+            for prototypes in self.router_prototypes:
+                nn.init.xavier_uniform_(prototypes)
+        else:
+            nn.init.xavier_uniform_(self.router_prototypes)
 
     def cv_squared(self, x):
         """The squared coefficient of variation of a sample.
@@ -507,15 +576,34 @@ class MoE(nn.Module):
         profiles = F.normalize(profiles, dim=-1)
         return (projected @ profiles.t()) * self.semantic_profile_scale
 
+    def _semantic_poly_kernel(self, semantic_logits):
+        scale = self.semantic_profile_scale
+        if scale != 0:
+            cosine = semantic_logits / scale
+        else:
+            cosine = semantic_logits
+        cosine = cosine.clamp(-1.0, 1.0)
+        distance = (2.0 - 2.0 * cosine).clamp_min(0.0).sqrt()
+        return 1.0 / (1.0 + distance.pow(self.poly_power))
+
     def _apply_semantic_logits(self, logits, x, idx=None):
         semantic_logits = self._semantic_logits(x, idx=idx, num_logits=logits.size(1))
         if semantic_logits is None:
             return logits, None
+        if self.gating in ["poly", "student_t", "sigmoid", "sigmoid_dist"]:
+            if self.semantic_profile_fusion == "replace" and self.gating == "poly":
+                return self._semantic_poly_kernel(semantic_logits), semantic_logits
+            semantic_multiplier = torch.exp(semantic_logits)
+            if self.semantic_profile_fusion == "replace":
+                return semantic_multiplier, semantic_logits
+            return logits * semantic_multiplier, semantic_logits
         if self.semantic_profile_fusion == "replace":
             return semantic_logits, semantic_logits
         return logits + semantic_logits, semantic_logits
 
     def _external_semantic_logits(self, semantic_profile_logits, logits, modality=None):
+        if not self.use_semantic_expert_profiles:
+            return None
         if semantic_profile_logits is None:
             return None
         if modality is not None and modality not in self.semantic_profile_modalities:
@@ -532,9 +620,57 @@ class MoE(nn.Module):
         external_logits = self._external_semantic_logits(semantic_profile_logits, logits, modality=modality)
         if external_logits is None:
             return logits
+        if self.gating in ["poly", "student_t", "sigmoid", "sigmoid_dist"]:
+            if self.semantic_profile_fusion == "replace" and self.gating == "poly":
+                return self._semantic_poly_kernel(external_logits)
+            external_multiplier = torch.exp(external_logits)
+            if self.semantic_profile_fusion == "replace":
+                return external_multiplier
+            return logits * external_multiplier
         if self.semantic_profile_fusion == "replace":
             return external_logits
         return logits + external_logits
+
+    def _prototype_bank(self, idx=None):
+        if isinstance(self.router_prototypes, nn.ParameterList):
+            return self.router_prototypes[idx]
+        return self.router_prototypes
+
+    def _prototype_logits(self, x, idx=None):
+        if not self.use_prototype_router:
+            return None
+        if isinstance(self.prototype_query_proj, nn.ModuleList):
+            z = self.prototype_query_proj[idx](x)
+        else:
+            z = self.prototype_query_proj(x)
+        z = F.normalize(z, dim=-1)
+        prototypes = F.normalize(self._prototype_bank(idx=idx), dim=-1)
+        if self.gating == "poly":
+            dist = torch.cdist(z, prototypes)
+            return 1.0 / (1.0 + dist.pow(self.poly_power))
+        if self.gating == "student_t":
+            dist = torch.cdist(z, prototypes)
+            return 1.0 / ((1.0 + (dist.pow(2) / self.student_degree)) ** ((self.student_degree + 1) / 2))
+        if self.gating in ["laplace", "gaussian", "sigmoid_dist"]:
+            dist = torch.cdist(z, prototypes)
+            if self.gating == "gaussian":
+                return -dist.pow(2)
+            if self.gating == "sigmoid_dist":
+                return torch.sigmoid(-dist / max(self.prototype_router_temperature, 1e-6))
+            return -dist
+        return (z @ prototypes.t()) / max(self.prototype_router_temperature, 1e-6)
+
+    def _prototype_orthogonality_loss(self):
+        if not self.use_prototype_router or self.prototype_router_orth_coef <= 0:
+            return 0
+        banks = self.router_prototypes if isinstance(self.router_prototypes, nn.ParameterList) else [self.router_prototypes]
+        loss = 0
+        for bank in banks:
+            prototypes = F.normalize(bank, dim=-1)
+            sim = prototypes @ prototypes.t()
+            eye = torch.eye(sim.size(0), device=sim.device, dtype=sim.dtype)
+            loss = loss + (sim - eye).pow(2).mean()
+        return loss * self.prototype_router_orth_coef
 
     def _get_logits(self, x, train, noise_epsilon, idx=None, instruction_embedding=None, semantic_profile_logits=None, modality=None):
         x = self._fuse_instruction_input(x, instruction_embedding, idx=idx)
@@ -559,7 +695,10 @@ class MoE(nn.Module):
             temp = None
 
         # ---------- Compute clean logits ----------
-        if self.gating == 'softmax':
+        prototype_logits = self._prototype_logits(x, idx=idx)
+        if prototype_logits is not None:
+            clean_logits = prototype_logits
+        elif self.gating == 'softmax':
             clean_logits = x @ w_gate
         elif self.gating == 'laplace':
             clean_logits = -torch.cdist(x, torch.t(w_gate))
@@ -596,7 +735,7 @@ class MoE(nn.Module):
             clean_logits = clean_logits + instruction_logits
 
         # ---------- Noisy gating ----------
-        if self.noisy_gating:
+        if self.noisy_gating and prototype_logits is None:
             raw_noise_stddev = x @ w_noise
             noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon) * train)
 
@@ -663,6 +802,28 @@ class MoE(nn.Module):
 
         return logits, clean_logits, noisy_logits, noise_stddev
 
+    def _dense_gating(self, logits):
+        if self.gating == 'softmax':
+            if self.normalized:
+                gates = self.softmax(logits)
+            else:
+                gates = torch.exp(logits)
+        elif self.gating == 'laplace' or self.gating == 'gaussian':
+            if self.normalized:
+                gates = torch.exp(logits - torch.logsumexp(logits, dim=1, keepdim=True))
+            else:
+                gates = torch.exp(logits)
+        elif self.gating == 'poly' or self.gating == "student_t" or self.gating == "sigmoid" or self.gating == "sigmoid_dist":
+            logits = logits.clamp_min(1e-12)
+            if self.normalized:
+                gates = logits / logits.sum(dim=1, keepdim=True).clamp_min(1e-12)
+            else:
+                gates = logits
+        else:
+            gates = self.softmax(logits)
+        load = self._gates_to_load(gates)
+        return gates, load
+
     def _top_k_gating(self, logits, clean_logits, noisy_logits, noise_stddev, k):
         # For disjoint routing, logits only cover the local expert group for one
         # modality, so use logits.size(1) instead of the global expert count.
@@ -683,8 +844,9 @@ class MoE(nn.Module):
                 top_k_gates = torch.exp(top_k_logits)
             
         elif self.gating == 'poly' or self.gating == "student_t" or self.gating == "sigmoid" or self.gating == "sigmoid_dist":
+            top_k_logits = top_k_logits.clamp_min(1e-12)
             if self.normalized:
-                top_k_gates = top_k_logits / top_k_logits.sum(dim=1, keepdim=True)
+                top_k_gates = top_k_logits / top_k_logits.sum(dim=1, keepdim=True).clamp_min(1e-12)
             else:
                 top_k_gates = top_k_logits
             
@@ -723,10 +885,15 @@ class MoE(nn.Module):
                 semantic_profile_logits=semantic_profile_logits,
             )
             logits, clean_logits, noisy_logits, noise_stddev = all_logits[0], all_logits[1], all_logits[2], all_logits[3]
-            gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
+            if self.prototype_router_dense or self._use_dense_warmup():
+                gates, load = self._dense_gating(logits)
+            else:
+                gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
+            self._last_router_logits_for_loss = logits
             return gates, load
         else:
             all_gates, all_loads = [], []
+            all_logits_for_loss = []
             for i in range(self.num_modalities):
                 modality = modalities[i] if modalities is not None else None
                 all_logits = self._get_logits(
@@ -740,13 +907,50 @@ class MoE(nn.Module):
                 )
                 logits, clean_logits, noisy_logits, noise_stddev = all_logits[0], all_logits[1], all_logits[2], all_logits[3]
                 if self.router_type == 'permod':
-                    gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
+                    if self.prototype_router_dense or self._use_dense_warmup():
+                        gates, load = self._dense_gating(logits)
+                    else:
+                        gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.k)
                 else:
-                    gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.disjoint_k)
+                    if self.prototype_router_dense or self._use_dense_warmup():
+                        gates, load = self._dense_gating(logits)
+                    else:
+                        gates, load = self._top_k_gating(logits, clean_logits, noisy_logits, noise_stddev, self.disjoint_k)
                 all_gates.append(gates)
                 all_loads.append(load)
+                all_logits_for_loss.append(logits)
+            self._last_router_logits_for_loss = all_logits_for_loss
             return all_gates, all_loads
 
+    def _compute_router_z_loss(self):
+        if self.router_z_loss_coef <= 0 or self._last_router_logits_for_loss is None:
+            return 0
+
+        logits_list = (
+            self._last_router_logits_for_loss
+            if isinstance(self._last_router_logits_for_loss, list)
+            else [self._last_router_logits_for_loss]
+        )
+        losses = []
+        for logits in logits_list:
+            stable_logits = logits.float()
+            if self.router_z_loss_type == "squared_logits":
+                losses.append(stable_logits.pow(2).mean())
+            else:
+                losses.append(torch.logsumexp(stable_logits, dim=-1).pow(2).mean())
+        return torch.stack(losses).mean() * self.router_z_loss_coef
+
+    def _compute_router_entropy_loss(self, gates):
+        if self.router_entropy_coef <= 0:
+            return 0
+
+        gates_list = gates if isinstance(gates, list) else [gates]
+        entropies = []
+        for gate_tensor in gates_list:
+            safe_gates = gate_tensor.clamp_min(1e-12)
+            entropies.append(-(safe_gates * safe_gates.log()).sum(dim=-1).mean())
+        entropy = torch.stack(entropies).mean()
+        return -self.router_entropy_coef * entropy
 
     def _compute_loss(self, gates, loads, loss_coef):
         """Compute load balancing loss across all gates."""
@@ -756,7 +960,51 @@ class MoE(nn.Module):
                 loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
         else:
             loss = self.cv_squared(gates.sum(0)) + self.cv_squared(loads)
+        proto_loss = self._prototype_orthogonality_loss()
+        if isinstance(proto_loss, torch.Tensor):
+            loss = loss + proto_loss
+        z_loss = self._compute_router_z_loss()
+        if isinstance(z_loss, torch.Tensor):
+            loss = loss + z_loss
+        entropy_loss = self._compute_router_entropy_loss(gates)
+        if isinstance(entropy_loss, torch.Tensor):
+            loss = loss + entropy_loss
         return loss * loss_coef
+
+    def _compute_router_organ_supervision_loss(self, gates, router_organ_targets):
+        if (
+            not self.use_router_organ_supervision
+            or router_organ_targets is None
+            or self.router_organ_supervision_coef <= 0
+        ):
+            return 0
+
+        if isinstance(gates, list):
+            gate_tensor = torch.stack(gates, dim=0).mean(dim=0)
+        else:
+            gate_tensor = gates
+
+        targets = router_organ_targets.to(device=gate_tensor.device, dtype=gate_tensor.dtype)
+        if targets.size(1) < gate_tensor.size(1):
+            repeats = int(np.ceil(gate_tensor.size(1) / targets.size(1)))
+            targets = targets.repeat(1, repeats)
+        targets = targets[:, :gate_tensor.size(1)]
+
+        valid = targets.sum(dim=1) > 0
+        if valid.sum() == 0:
+            return 0
+
+        targets_valid = targets[valid]
+        if self.router_organ_supervision_class_balanced:
+            class_freq = targets_valid.sum(dim=0).clamp_min(1.0)
+            class_weights = class_freq.sum() / class_freq
+            class_weights = class_weights / class_weights.mean().clamp_min(1e-12)
+            targets_valid = targets_valid * class_weights.unsqueeze(0)
+
+        target_dist = targets_valid / targets_valid.sum(dim=1, keepdim=True).clamp_min(1e-12)
+        gates_valid = gate_tensor[valid].clamp_min(1e-12)
+        loss = -(target_dist * gates_valid.log()).sum(dim=1).mean()
+        return loss * self.router_organ_supervision_coef
 
 
     def _compute_shared_output(self, x):
@@ -802,7 +1050,7 @@ class MoE(nn.Module):
             out = out - np.log(2)  # normalize by number of components in the mixture
         return out
 
-    def forward(self, x, train=True, loss_coef=1e-2, modalities=None, instruction_embedding=None, semantic_profile_logits=None):
+    def forward(self, x, train=True, loss_coef=1e-2, modalities=None, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
         gates, load = self.noisy_top_k_gating(
             x,
             train,
@@ -810,7 +1058,24 @@ class MoE(nn.Module):
             instruction_embedding=instruction_embedding,
             semantic_profile_logits=semantic_profile_logits,
         )
+        if isinstance(gates, list):
+            self.last_router_diagnostics = {
+                "router_type": self.router_type,
+                "router_mode": "dense_warmup" if self._use_dense_warmup() else ("prototype" if self.use_prototype_router else "standard"),
+                "gates": [g.detach().float().cpu() for g in gates],
+                "modalities": modalities,
+            }
+        else:
+            self.last_router_diagnostics = {
+                "router_type": self.router_type,
+                "router_mode": "dense_warmup" if self._use_dense_warmup() else ("prototype" if self.use_prototype_router else "standard"),
+                "gates": gates.detach().float().cpu(),
+                "modalities": modalities,
+            }
         loss = self._compute_loss(gates, load, loss_coef)
+        organ_loss = self._compute_router_organ_supervision_loss(gates, router_organ_targets)
+        if isinstance(organ_loss, torch.Tensor):
+            loss = loss + organ_loss
 
         # global shared output: always computed once on full input
         joint_x = torch.cat(x, dim=1) if isinstance(x, list) else x

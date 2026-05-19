@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.model import *
-from core.lingshu_pseudotoken import LingshuPseudoTokenModel
+from core.lingshu_pseudotoken import LingshuOrganLoraMoEModel, LingshuPseudoTokenModel
 from core.train import *
 from utils.checkpoint import *
 from utils.util import *
@@ -287,7 +287,8 @@ def main():
 
     device = accelerator.device
     print(device)
-    os.makedirs(args.output_dir, exist_ok = True)
+    if not getattr(args, "disable_run_folder_save", False):
+        os.makedirs(args.output_dir, exist_ok = True)
     if args.tensorboard_dir!=None:
         writer = SummaryWriter(args.tensorboard_dir)
     else:
@@ -378,7 +379,10 @@ def main():
     # print(device)
     
     if args.dataset == "mimic":
-        model = LingshuPseudoTokenModel(args=args, device=device)
+        if args.lingshu_architecture == "organ_lora_moe":
+            model = LingshuOrganLoraMoEModel(args=args, device=device)
+        else:
+            model = LingshuPseudoTokenModel(args=args, device=device)
     elif args.dataset == "pam":
         modality_dims = pam_modality_dims
         # Ensure cross_method is set (from args)
@@ -426,7 +430,10 @@ def main():
         
 
     print(f"New maximum memory allocated on GPU: {torch.cuda.max_memory_allocated(device)} bytes")
-    print(f'Results saved in:\n{args.ck_file_path}')
+    if getattr(args, "disable_run_folder_save", False):
+        print("Results not saved to run_folder (--disable_run_folder_save).")
+    else:
+        print(f'Results saved in:\n{args.ck_file_path}')
 
 
 if __name__ == "__main__":

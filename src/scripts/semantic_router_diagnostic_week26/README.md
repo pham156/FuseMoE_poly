@@ -45,6 +45,32 @@ bash /home/pham156/MoE/FuseMoE_poly/src/scripts/semantic_router_diagnostic_week2
 /home/pham156/MoE/FuseMoE_poly/out/Week_26/sem_diag26_<jobid>.err
 ```
 
+Each run also writes router diagnostics:
+
+```text
+<run_folder>/router_diagnostics_test.csv
+```
+
+Columns include:
+
+```text
+sample_id
+true_label
+pred_score
+pred_label
+weak_organ_labels
+topk_expert_ids_weights
+topk_expert_profile_names
+note_text_snippet
+```
+
+Summarize routing consistency after jobs finish:
+
+```bash
+python /home/pham156/MoE/FuseMoE_poly/src/scripts/semantic_router_diagnostic_week26/summarize_router_diagnostics.py \
+  /home/pham156/MoE/FuseMoE_poly/run_folder/week26/semantic_router_diagnostic/
+```
+
 ## Run Folders
 
 ```text
