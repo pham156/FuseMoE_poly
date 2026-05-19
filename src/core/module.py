@@ -645,7 +645,12 @@ class TransformerCrossEncoderLayer(nn.Module):
             router_z_loss_coef=args.router_z_loss_coef,
             router_z_loss_type=args.router_z_loss_type,
             router_entropy_coef=args.router_entropy_coef,
-            dense_warmup_epochs=args.dense_warmup_epochs
+            dense_warmup_epochs=args.dense_warmup_epochs,
+            router_temperature=args.router_temperature,
+            use_xmoe_router=args.use_xmoe_router,
+            xmoe_router_dim=args.xmoe_router_dim,
+            xmoe_router_init_norm=args.xmoe_router_init_norm,
+            xmoe_noise_scale=args.xmoe_noise_scale
             )
             
             self.moe = MoE(moe_config)

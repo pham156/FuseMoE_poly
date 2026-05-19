@@ -25,6 +25,7 @@ PRIMARY_METRIC="${PRIMARY_METRIC:-f1}"
 SEED="${SEED:-30}"
 RATIO="${RATIO:-1.0}"
 SAFE_RATIO="${RATIO/./p}"
+GATING_FUNCTION="${GATING_FUNCTION:-softmax}"
 
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-16}"
 DENSE_WARMUP_EPOCHS="${DENSE_WARMUP_EPOCHS:-8}"
@@ -32,16 +33,20 @@ BALANCE_COEF="${BALANCE_COEF:-1.0}"
 SHARED_EXPERTS="${SHARED_EXPERTS:-1}"
 ROUTER_Z_LOSS_COEF="${ROUTER_Z_LOSS_COEF:-0.01}"
 ROUTER_ENTROPY_COEF="${ROUTER_ENTROPY_COEF:-0.1}"
+ROUTER_TEMPERATURE="${ROUTER_TEMPERATURE:-1.0}"
+POLY_POWER="${POLY_POWER:-2}"
 
 SAFE_BAL="${BALANCE_COEF/./p}"
 SAFE_Z="${ROUTER_Z_LOSS_COEF/./p}"
 SAFE_ENT="${ROUTER_ENTROPY_COEF/./p}"
+SAFE_TEMP="${ROUTER_TEMPERATURE/./p}"
+SAFE_GATE="${GATING_FUNCTION//[^A-Za-z0-9_]/_}"
 
-OUTPUT_DIR="/home/pham156/MoE/FuseMoE_poly/run_folder/week26/softmax_dense_warmup/${TASK}_joint4_k2_seed${SEED}_ratio${SAFE_RATIO}_ep${TOTAL_EPOCHS}_warm${DENSE_WARMUP_EPOCHS}_bal${SAFE_BAL}_z${SAFE_Z}_ent${SAFE_ENT}"
-DIAG_PATH="/home/pham156/MoE/FuseMoE_poly/out/Week_26/softmax_collapse/softmax_dense_warmup_${TASK}_joint4_k2_seed${SEED}_ratio${SAFE_RATIO}_ep${TOTAL_EPOCHS}_warm${DENSE_WARMUP_EPOCHS}_bal${SAFE_BAL}_z${SAFE_Z}_ent${SAFE_ENT}_router_diagnostics.csv"
+OUTPUT_DIR="/home/pham156/MoE/FuseMoE_poly/run_folder/week26/softmax_dense_warmup/${SAFE_GATE}_${TASK}_joint4_k2_seed${SEED}_ratio${SAFE_RATIO}_ep${TOTAL_EPOCHS}_warm${DENSE_WARMUP_EPOCHS}_bal${SAFE_BAL}_z${SAFE_Z}_ent${SAFE_ENT}_temp${SAFE_TEMP}"
+DIAG_PATH="/home/pham156/MoE/FuseMoE_poly/out/Week_26/softmax_collapse/${SAFE_GATE}_dense_warmup_${TASK}_joint4_k2_seed${SEED}_ratio${SAFE_RATIO}_ep${TOTAL_EPOCHS}_warm${DENSE_WARMUP_EPOCHS}_bal${SAFE_BAL}_z${SAFE_Z}_ent${SAFE_ENT}_temp${SAFE_TEMP}_router_diagnostics.csv"
 rm -f "$DIAG_PATH"
 
-echo "===== WEEK26 SOFTMAX DENSE WARMUP START ====="
+echo "===== WEEK26 GATING DENSE WARMUP START ====="
 echo "job_id: ${SLURM_JOB_ID:-N/A}"
 echo "task: ${TASK}"
 echo "modeltype: TS_CXR_Text"
@@ -51,13 +56,15 @@ echo "ratio: ${RATIO}"
 echo "router: joint"
 echo "experts: 4"
 echo "top_k after warmup: 2"
-echo "gating: softmax"
+echo "gating: ${GATING_FUNCTION}"
 echo "total_epochs: ${TOTAL_EPOCHS}"
 echo "dense_warmup_epochs: ${DENSE_WARMUP_EPOCHS}"
 echo "shared_experts: ${SHARED_EXPERTS}"
 echo "balance_loss_coef: ${BALANCE_COEF}"
 echo "router_z_loss_coef: ${ROUTER_Z_LOSS_COEF}"
 echo "router_entropy_coef: ${ROUTER_ENTROPY_COEF}"
+echo "router_temperature: ${ROUTER_TEMPERATURE}"
+echo "poly_power: ${POLY_POWER}"
 echo "output_dir: ${OUTPUT_DIR}"
 echo "router_diagnostics_path: ${DIAG_PATH}"
 echo "================================================"
@@ -100,7 +107,7 @@ python -u -W ignore main_mimiciv.py \
   --irregular_learn_emb_cxr \
   --irregular_learn_emb_ecg \
   --cross_method "moe" \
-  --gating_function "softmax" \
+  --gating_function "$GATING_FUNCTION" \
   --num_of_experts 4 \
   --top_k 2 \
   --disjoint_top_k 2 \
@@ -118,10 +125,12 @@ python -u -W ignore main_mimiciv.py \
   --router_z_loss_coef "$ROUTER_Z_LOSS_COEF" \
   --router_z_loss_type logsumexp \
   --router_entropy_coef "$ROUTER_ENTROPY_COEF" \
+  --router_temperature "$ROUTER_TEMPERATURE" \
   --dense_warmup_epochs "$DENSE_WARMUP_EPOCHS" \
   --log_router_diagnostics \
   --router_diagnostics_layers all \
   --router_diagnostics_path "$DIAG_PATH" \
-  --router_diagnostics_max_text_chars 600
+  --router_diagnostics_max_text_chars 600 \
+  $(if [[ "$GATING_FUNCTION" == "poly" ]]; then echo "--poly_power $POLY_POWER"; fi)
 
-echo "Finished Week26 softmax dense warmup"
+echo "Finished Week26 ${GATING_FUNCTION} dense warmup"

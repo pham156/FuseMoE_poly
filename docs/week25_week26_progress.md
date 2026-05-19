@@ -734,3 +734,182 @@ FuseMoE architecture runnable.
 ```
 
 This keeps polynomial routing in the story while avoiding overclaiming organ-level interpretability.
+
+## 17. Week26 Collapse-Fix Follow-Up: X-MOE Router + Shared Expert
+
+After the semantic-profile and missing-reconstruction experiments, we returned to the simpler question:
+
+```text
+Can we fix expert collapse in the original FuseMoE setting without adding clinical semantic constraints?
+```
+
+The main issue observed in the original router is that it routes directly from a very large flattened patient vector:
+
+```text
+3 modalities: x in R^(48 * 128 * 3) = R^18432
+4 modalities: x in R^(48 * 128 * 4) = R^24576
+```
+
+This makes the router logits easy to dominate by a few dimensions or one expert's early advantage. Balance loss alone did not fix this reliably.
+
+### 17.1 Implemented X-MOE-Style Router
+
+We added an optional low-dimensional normalized router path behind flags.
+
+Important flags:
+
+```text
+--use_xmoe_router
+--xmoe_router_dim
+--xmoe_noise_scale
+--shared_experts
+```
+
+The experts still receive the full flattened FuseMoE feature vector. Only the router input is changed:
+
+```text
+full flattened patient vector x
+        |
+        |  router projection only
+        v
+low-dimensional normalized router embedding z
+        |
+        |  similarity or distance to expert embeddings
+        v
+router logits
+```
+
+This means X-MOE does not discard the full patient representation used by the MLP experts. It only makes the routing decision in a smaller and better-conditioned space.
+
+Implemented variants:
+
+```text
+softmax X-MOE:
+    logits = normalize(project(x)) dot normalize(expert_embedding)
+
+laplace X-MOE:
+    logits = -distance(project(x), expert_embedding)
+
+poly X-MOE:
+    score = 1 / (1 + distance(project(x), expert_embedding)^r)
+```
+
+We also added configurable router noise:
+
+```text
+effective_noise_std = learned_noise_std * xmoe_noise_scale
+```
+
+### 17.2 Shared Expert
+
+We also enabled `--shared_experts 1`.
+
+Motivation:
+
+- Without a shared expert, one routed expert tends to become the general ICU expert.
+- With a shared expert, common ICU signal can pass through the shared path.
+- Routed experts have less pressure to carry universal information.
+
+For the current joint routing implementation, routed and shared outputs are combined in probability space as an approximate 50/50 mixture:
+
+```text
+combined_log_prob = logaddexp(routed_log_prob, shared_log_prob) - log(2)
+```
+
+This is not meant to create a clinically interpretable shared expert yet. It is a stabilization mechanism.
+
+### 17.3 Paper-Config Runs
+
+We also tested closer to the FuseMoE paper configuration:
+
+```text
+num_experts: 16
+top_k: 4
+disjoint_top_k: 2
+MoE layers: 3
+FFN hidden size: 512
+epochs: 8 for paper-style checks, 20 for collapse-fix tuning
+seed: 30 for most Week26 diagnostics
+task: ihm-48-cxr-notes-ecg
+router: joint
+```
+
+### 17.4 Corrected X-MOE Results Table
+
+These are the verified results from the actual Week26 log files. Earlier notes mixed some job IDs, so this table should be treated as the corrected reference.
+
+| Job ID | Router | Experts / Top-k | Noise | Balance coef | Shared | AUC | AUPRC | F1 | Routing note |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `10735378` | softmax X-MOE | 16 / 4 | 1.0 | 0.02 | 1 | 0.8096 | 0.4331 | 0.5087 | Almost perfectly uniform routing; no collapse, possibly too uniform. |
+| `10735562` | softmax X-MOE | 16 / 4 | 0.3 | 0.01 | 1 | 0.7992 | 0.4092 | 0.4131 | Poorer performance; layer 2 still had near-dead experts. |
+| `10735563` | laplace X-MOE | 16 / 4 | 0.3 | 0.01 | 1 | 0.8111 | 0.4374 | 0.5153 | Best verified F1 so far among this group. |
+| `10735663` | softmax X-MOE | 16 / 4 | 0.2 | 0.01 | 1 | 0.8045 | 0.4371 | 0.4820 | Underbalanced; many ignored experts. |
+| `10735664` | softmax X-MOE | 16 / 4 | 0.3 | 0.005 | 1 | 0.8090 | 0.4397 | 0.4950 | Better than low-noise softmax, but still some layer-2 dead experts. |
+
+Current interpretation:
+
+- X-MOE + shared expert is the strongest collapse-prevention direction so far.
+- Laplace X-MOE with moderate noise currently gives the best verified performance/balance tradeoff.
+- Softmax X-MOE is sensitive to noise and balance coefficient.
+- Too much regularization/noise makes the router look artificially uniform.
+- Too little regularization/noise still leaves ignored experts, especially in deeper MoE layers.
+
+The desired behavior is not perfect uniformity. The goal is:
+
+```text
+no dead experts
+some specialization
+stable task performance
+not a fixed top-k pair for every patient
+```
+
+### 17.5 Runs Still Being Checked
+
+The following tuning runs were submitted after the corrected table above:
+
+| Job ID | Router | Experts / Top-k | Noise | Balance coef | Shared | Purpose |
+|---|---:|---:|---:|---:|---:|---|
+| `10735830` | softmax X-MOE | 16 / 4 | 0.5 | 0.005 | 1 | Test whether higher noise with weaker balance improves softmax diversity without overbalancing. |
+| `10735831` | softmax X-MOE | 16 / 4 | 0.5 | 0.01 | 1 | Test higher noise with stronger balance. |
+| `10735906` | softmax X-MOE | 4 / 2 | 0.5 | 0.01 | 1 | Compare X-MOE collapse behavior in the original 4-expert setting. |
+| `10735907` | laplace X-MOE | 4 / 2 | 0.5 | 0.01 | 1 | Compare laplace X-MOE in the original 4-expert setting. |
+
+These should be checked before deciding the next stable setting.
+
+### 17.6 Practical Next Decision
+
+For the next round, prioritize routing stability before adding more semantic constraints.
+
+Recommended order:
+
+1. Finish reading jobs `10735830`, `10735831`, `10735906`, and `10735907`.
+2. Pick one stable 16-expert setting and one stable 4-expert setting.
+3. Compare against the original softmax baseline using the same seed/task/ratio.
+4. Only after this, reintroduce semantic or missing-modality objectives.
+
+Current best candidate to keep:
+
+```text
+laplace X-MOE
+num_experts = 16
+top_k = 4
+shared_experts = 1
+xmoe_noise_scale around 0.3
+balance_coef around 0.01
+```
+
+Softmax X-MOE may still be viable, but it needs tuning around:
+
+```text
+xmoe_noise_scale: 0.3 to 0.5
+balance_coef: 0.005 to 0.01
+```
+
+The main paper-relevant conclusion from this section:
+
+```text
+Expert collapse in this FuseMoE setup is driven less by the clinical meaning of experts
+and more by the conditioning of the router input/logits. A low-dimensional normalized
+router space plus an explicit shared expert is currently the most effective engineering
+fix for collapse.
+```

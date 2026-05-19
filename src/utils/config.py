@@ -80,7 +80,12 @@ class MoEConfig:
         router_z_loss_coef = 0.0,
         router_z_loss_type = "logsumexp",
         router_entropy_coef = 0.0,
-        dense_warmup_epochs = 0
+        dense_warmup_epochs = 0,
+        router_temperature = 1.0,
+        use_xmoe_router = False,
+        xmoe_router_dim = 128,
+        xmoe_router_init_norm = 0.1,
+        xmoe_noise_scale = 1.0
     ):
         # Input
         self.vocab_size = vocab_size
@@ -141,6 +146,11 @@ class MoEConfig:
         self.router_z_loss_type = router_z_loss_type
         self.router_entropy_coef = router_entropy_coef
         self.dense_warmup_epochs = dense_warmup_epochs
+        self.router_temperature = router_temperature
+        self.use_xmoe_router = use_xmoe_router
+        self.xmoe_router_dim = xmoe_router_dim
+        self.xmoe_router_init_norm = xmoe_router_init_norm
+        self.xmoe_noise_scale = xmoe_noise_scale
         
         # image
         self.image_size = image_size

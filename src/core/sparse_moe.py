@@ -255,10 +255,52 @@ class MoE(nn.Module):
         self.router_z_loss_type = getattr(config, "router_z_loss_type", "logsumexp")
         self.router_entropy_coef = getattr(config, "router_entropy_coef", 0.0)
         self.dense_warmup_epochs = getattr(config, "dense_warmup_epochs", 0)
+        self.router_temperature = max(float(getattr(config, "router_temperature", 1.0)), 1e-6)
+        self.use_xmoe_router = getattr(config, "use_xmoe_router", False)
+        self.xmoe_router_dim = getattr(config, "xmoe_router_dim", 128)
+        self.xmoe_router_init_norm = getattr(config, "xmoe_router_init_norm", 0.1)
+        self.xmoe_noise_scale = max(float(getattr(config, "xmoe_noise_scale", 1.0)), 0.0)
         self.current_epoch = 0
         self._last_router_logits_for_loss = None
 
         # instantiate experts
+        if self.use_xmoe_router:
+            if self.router_type == 'disjoint':
+                self.xmoe_router_proj = nn.ModuleList([
+                    nn.Linear(self.input_size//self.num_modalities, self.xmoe_router_dim, bias=False)
+                    for _ in range(self.num_modalities)
+                ])
+                self.xmoe_noise_proj = nn.ModuleList([
+                    nn.Linear(self.xmoe_router_dim, self.num_experts//self.num_modalities, bias=False)
+                    for _ in range(self.num_modalities)
+                ])
+                self.xmoe_expert_embeddings = nn.ParameterList([
+                    nn.Parameter(torch.empty(self.num_experts//self.num_modalities, self.xmoe_router_dim))
+                    for _ in range(self.num_modalities)
+                ])
+            elif self.router_type == 'permod':
+                self.xmoe_router_proj = nn.ModuleList([
+                    nn.Linear(self.input_size//self.num_modalities, self.xmoe_router_dim, bias=False)
+                    for _ in range(self.num_modalities)
+                ])
+                self.xmoe_noise_proj = nn.ModuleList([
+                    nn.Linear(self.xmoe_router_dim, self.num_experts, bias=False)
+                    for _ in range(self.num_modalities)
+                ])
+                self.xmoe_expert_embeddings = nn.ParameterList([
+                    nn.Parameter(torch.empty(self.num_experts, self.xmoe_router_dim))
+                    for _ in range(self.num_modalities)
+                ])
+            else:
+                self.xmoe_router_proj = nn.Linear(self.input_size, self.xmoe_router_dim, bias=False)
+                self.xmoe_noise_proj = nn.Linear(self.xmoe_router_dim, self.num_experts, bias=False)
+                self.xmoe_expert_embeddings = nn.Parameter(torch.empty(self.num_experts, self.xmoe_router_dim))
+            self._reset_xmoe_router()
+        else:
+            self.xmoe_router_proj = None
+            self.xmoe_noise_proj = None
+            self.xmoe_expert_embeddings = None
+
         if self.router_type == 'disjoint':
             self.w_gate = [nn.Parameter(torch.zeros(self.input_size//self.num_modalities, self.num_experts//self.num_modalities), requires_grad=True) for _ in range(self.num_modalities)]
             self.w_noise = [nn.Parameter(torch.zeros(self.input_size//self.num_modalities, self.num_experts//self.num_modalities), requires_grad=True) for _ in range(self.num_modalities)]
@@ -440,6 +482,63 @@ class MoE(nn.Module):
                 nn.init.xavier_uniform_(prototypes)
         else:
             nn.init.xavier_uniform_(self.router_prototypes)
+
+    def _reset_xmoe_router(self):
+        if isinstance(self.xmoe_router_proj, nn.ModuleList):
+            for proj in self.xmoe_router_proj:
+                nn.init.xavier_uniform_(proj.weight)
+        elif self.xmoe_router_proj is not None:
+            nn.init.xavier_uniform_(self.xmoe_router_proj.weight)
+
+        if isinstance(self.xmoe_noise_proj, nn.ModuleList):
+            for proj in self.xmoe_noise_proj:
+                nn.init.zeros_(proj.weight)
+        elif self.xmoe_noise_proj is not None:
+            nn.init.zeros_(self.xmoe_noise_proj.weight)
+
+        embeddings = (
+            self.xmoe_expert_embeddings
+            if isinstance(self.xmoe_expert_embeddings, nn.ParameterList)
+            else [self.xmoe_expert_embeddings]
+        )
+        for expert_embeddings in embeddings:
+            nn.init.normal_(expert_embeddings)
+            with torch.no_grad():
+                expert_embeddings.copy_(
+                    F.normalize(expert_embeddings, dim=-1) * self.xmoe_router_init_norm
+                )
+
+    def _xmoe_projection_and_logits(self, x, idx=None):
+        if not self.use_xmoe_router:
+            return None, None
+        if isinstance(self.xmoe_router_proj, nn.ModuleList):
+            projected = self.xmoe_router_proj[idx](x)
+            expert_embeddings = self.xmoe_expert_embeddings[idx]
+        else:
+            projected = self.xmoe_router_proj(x)
+            expert_embeddings = self.xmoe_expert_embeddings
+        projected = F.normalize(projected, dim=-1)
+        expert_embeddings = F.normalize(expert_embeddings, dim=-1)
+        if self.gating == "laplace":
+            return projected, -torch.cdist(projected, expert_embeddings)
+        if self.gating == "gaussian":
+            return projected, -torch.cdist(projected, expert_embeddings).pow(2)
+        if self.gating == "poly":
+            dist = torch.cdist(projected, expert_embeddings)
+            return projected, 1.0 / (1.0 + dist.pow(self.poly_power))
+        if self.gating == "student_t":
+            dist = torch.cdist(projected, expert_embeddings)
+            return projected, 1.0 / ((1.0 + (dist.pow(2) / self.student_degree)) ** ((self.student_degree + 1) / 2))
+        return projected, projected @ expert_embeddings.t()
+
+    def _xmoe_noise_stddev(self, projected, train, noise_epsilon, idx=None):
+        if projected is None or self.xmoe_noise_proj is None:
+            return None
+        if isinstance(self.xmoe_noise_proj, nn.ModuleList):
+            raw_noise_stddev = self.xmoe_noise_proj[idx](projected)
+        else:
+            raw_noise_stddev = self.xmoe_noise_proj(projected)
+        return (self.softplus(raw_noise_stddev) + noise_epsilon) * train * self.xmoe_noise_scale
 
     def cv_squared(self, x):
         """The squared coefficient of variation of a sample.
@@ -691,13 +790,18 @@ class MoE(nn.Module):
 
         if self.use_temp and self.log_tau is not None:
             temp = self.log_tau.exp()
+        elif self.router_temperature != 1.0:
+            temp = torch.tensor(self.router_temperature, device=x.device, dtype=x.dtype)
         else:
             temp = None
 
         # ---------- Compute clean logits ----------
         prototype_logits = self._prototype_logits(x, idx=idx)
+        xmoe_projected = None
         if prototype_logits is not None:
             clean_logits = prototype_logits
+        elif self.use_xmoe_router:
+            xmoe_projected, clean_logits = self._xmoe_projection_and_logits(x, idx=idx)
         elif self.gating == 'softmax':
             clean_logits = x @ w_gate
         elif self.gating == 'laplace':
@@ -735,7 +839,15 @@ class MoE(nn.Module):
             clean_logits = clean_logits + instruction_logits
 
         # ---------- Noisy gating ----------
-        if self.noisy_gating and prototype_logits is None:
+        if self.noisy_gating and prototype_logits is None and self.use_xmoe_router:
+            noise_stddev = self._xmoe_noise_stddev(xmoe_projected, train, noise_epsilon, idx=idx)
+            noise = torch.randn_like(clean_logits) * noise_stddev
+            noisy_logits = clean_logits + noise
+            if temp is not None:
+                clean_logits = clean_logits / temp
+                noisy_logits = noisy_logits / temp
+            logits = noisy_logits
+        elif self.noisy_gating and prototype_logits is None:
             raw_noise_stddev = x @ w_noise
             noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon) * train)
 
@@ -787,10 +899,13 @@ class MoE(nn.Module):
                 noise = torch.randn_like(clean_logits) * noise_stddev
                 noisy_logits = clean_logits + noise
                 if temp is not None:
+                    clean_logits = clean_logits / temp
                     noisy_logits = noisy_logits / temp
                 logits = noisy_logits
         else:
             noise_stddev = torch.zeros_like(clean_logits)
+            if self.gating == 'softmax' and temp is not None:
+                clean_logits = clean_logits / temp
             noisy_logits = clean_logits
             logits = clean_logits
 
@@ -854,7 +969,12 @@ class MoE(nn.Module):
         zeros = torch.zeros_like(logits, dtype=top_k_gates.dtype, requires_grad=True)
         gates = zeros.scatter(1, top_k_indices, top_k_gates)
 
-        if self.noisy_gating and effective_k < num_available_experts:
+        has_positive_noise = (
+            noise_stddev is not None
+            and torch.is_tensor(noise_stddev)
+            and bool(torch.any(noise_stddev > 0).detach().cpu().item())
+        )
+        if self.noisy_gating and effective_k < num_available_experts and has_positive_noise:
             load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
         else:
             load = self._gates_to_load(gates)
@@ -960,6 +1080,7 @@ class MoE(nn.Module):
                 loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
         else:
             loss = self.cv_squared(gates.sum(0)) + self.cv_squared(loads)
+        balance_component = loss
         proto_loss = self._prototype_orthogonality_loss()
         if isinstance(proto_loss, torch.Tensor):
             loss = loss + proto_loss
@@ -969,7 +1090,19 @@ class MoE(nn.Module):
         entropy_loss = self._compute_router_entropy_loss(gates)
         if isinstance(entropy_loss, torch.Tensor):
             loss = loss + entropy_loss
-        return loss * loss_coef
+        scaled_loss = loss * loss_coef
+        device = scaled_loss.device
+        dtype = scaled_loss.dtype
+        zero = torch.zeros((), device=device, dtype=dtype)
+        self.last_router_aux_components = {
+            "balance_unscaled": balance_component.detach(),
+            "prototype_orth_unscaled": (proto_loss.detach() if isinstance(proto_loss, torch.Tensor) else zero),
+            "z_loss_unscaled": (z_loss.detach() if isinstance(z_loss, torch.Tensor) else zero),
+            "entropy_loss_unscaled": (entropy_loss.detach() if isinstance(entropy_loss, torch.Tensor) else zero),
+            "total_unscaled": loss.detach(),
+            "total_scaled": scaled_loss.detach(),
+        }
+        return scaled_loss
 
     def _compute_router_organ_supervision_loss(self, gates, router_organ_targets):
         if (

@@ -88,6 +88,16 @@ def _find_all_router_diagnostics(model):
     return found
 
 
+def _find_all_router_aux_components(model):
+    unwrapped = model.module if hasattr(model, "module") else model
+    found = []
+    for module in unwrapped.modules():
+        components = getattr(module, "last_router_aux_components", None)
+        if components is not None:
+            found.append(components)
+    return found
+
+
 def _set_moe_epoch(model, epoch):
     unwrapped = model.module if hasattr(model, "module") else model
     for module in unwrapped.modules():
@@ -299,6 +309,8 @@ def trainer_irg(
         router_layer_gate_sums = []
         router_layer_select_sums = []
         router_layer_counts = []
+        router_aux_sums = {}
+        router_aux_count = 0
         if dataset == "mimic" and "Text" in args.modeltype and hasattr(model, "bertrep"):
             if (
                 args.num_update_bert_epochs < args.num_train_epochs
@@ -519,6 +531,19 @@ def trainer_irg(
                     log_dict["train/balance_loss"] = balance_value
                     balance_loss_sum += balance_value
                     balance_loss_count += 1
+                    aux_components = _find_all_router_aux_components(unwrapped_model)
+                    if aux_components:
+                        step_components = {}
+                        for components in aux_components:
+                            for name, value in components.items():
+                                try:
+                                    component_value = float(value.detach().cpu().item())
+                                except Exception:
+                                    component_value = float(value)
+                                step_components[name] = step_components.get(name, 0.0) + component_value
+                        for name, value in step_components.items():
+                            router_aux_sums[name] = router_aux_sums.get(name, 0.0) + value
+                        router_aux_count += 1
                 except Exception:
                     pass
             try:
@@ -585,7 +610,13 @@ def trainer_irg(
         if none_count > 0:
             print("none_count", none_count)
         if balance_loss_count > 0:
-            print("Train balance_loss avg", balance_loss_sum / balance_loss_count)
+            print("Train router_aux_loss avg", balance_loss_sum / balance_loss_count)
+        if router_aux_count > 0:
+            component_str = ", ".join(
+                f"{name}:{router_aux_sums[name] / router_aux_count:.6f}"
+                for name in sorted(router_aux_sums)
+            )
+            print("Train router aux components avg", component_str)
         if router_gate_sum is not None and router_gate_count > 0:
             usage = router_gate_sum / max(router_gate_count, 1)
             usage_str = ", ".join(f"e{i}:{float(v):.4f}" for i, v in enumerate(usage))
@@ -643,6 +674,9 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
     eval_example = []
     eval_subjects = []
     none_count = 0
+    test_router_layer_gate_sums = []
+    test_router_layer_select_sums = []
+    test_router_layer_counts = []
     total = len(data_loader)
     for idx, batch in enumerate(
         tqdm(
@@ -787,11 +821,61 @@ def evaluate_irg(args, device, data_loader, model, mode=None, dataset="mimic"):
             label_ids = label.cpu().numpy()
             if mode == "test":
                 _write_router_diagnostics(args, metadata, label_ids, logits_np, model)
+                if getattr(args, "log_router_diagnostics", False):
+                    all_diagnostics = (
+                        _find_all_router_diagnostics(model)
+                        if getattr(args, "router_diagnostics_layers", "last") == "all"
+                        else [_find_router_diagnostics(model)]
+                    )
+                    all_diagnostics = [d for d in all_diagnostics if d is not None]
+                    for layer_idx, diagnostics in enumerate(all_diagnostics):
+                        gates = diagnostics.get("gates")
+                        if gates is None:
+                            continue
+                        if isinstance(gates, list):
+                            detached_gates = [g.detach().float() for g in gates]
+                            gate_sum = sum(g.sum(dim=0).cpu() for g in detached_gates)
+                            select_sum = sum((g > 0).float().sum(dim=0).cpu() for g in detached_gates)
+                            gate_count = sum(int(g.size(0)) for g in gates)
+                        else:
+                            detached_gates = gates.detach().float()
+                            gate_sum = detached_gates.sum(dim=0).cpu()
+                            select_sum = (detached_gates > 0).float().sum(dim=0).cpu()
+                            gate_count = int(gates.size(0))
+
+                        while len(test_router_layer_gate_sums) <= layer_idx:
+                            test_router_layer_gate_sums.append(None)
+                            test_router_layer_select_sums.append(None)
+                            test_router_layer_counts.append(0)
+
+                        test_router_layer_gate_sums[layer_idx] = (
+                            gate_sum
+                            if test_router_layer_gate_sums[layer_idx] is None
+                            else test_router_layer_gate_sums[layer_idx] + gate_sum
+                        )
+                        test_router_layer_select_sums[layer_idx] = (
+                            select_sum
+                            if test_router_layer_select_sums[layer_idx] is None
+                            else test_router_layer_select_sums[layer_idx] + select_sum
+                        )
+                        test_router_layer_counts[layer_idx] += gate_count
             eval_logits += logits_np.tolist()
             eval_example += label_ids.tolist()
 
     if none_count > 0:
         print("none_count", none_count)
+    if mode == "test" and test_router_layer_gate_sums:
+        for layer_idx, (gate_sum, select_sum, gate_count) in enumerate(
+            zip(test_router_layer_gate_sums, test_router_layer_select_sums, test_router_layer_counts)
+        ):
+            if gate_sum is None or gate_count <= 0:
+                continue
+            usage = gate_sum / max(gate_count, 1)
+            usage_str = ", ".join(f"e{i}:{float(v):.4f}" for i, v in enumerate(usage))
+            print(f"Test router layer{layer_idx} gate mass avg", usage_str)
+            selection = select_sum / max(gate_count, 1)
+            selection_str = ", ".join(f"e{i}:{float(v):.4f}" for i, v in enumerate(selection))
+            print(f"Test router layer{layer_idx} selection freq avg", selection_str)
 
     eval_vals = {}
     all_logits = np.array(eval_logits)
