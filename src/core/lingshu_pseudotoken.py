@@ -192,6 +192,7 @@ class LingshuPseudoTokenModel(nn.Module):
             return
 
         projected = projector(features.to(dtype=projector.weight.dtype))
+        projected = torch.nan_to_num(projected, nan=0.0, posinf=0.0, neginf=0.0)
         modality_embedding = self.modality_embeddings.weight[modality_id].to(dtype=projected.dtype)
         projected = projected + modality_embedding
 
@@ -231,6 +232,7 @@ class LingshuPseudoTokenModel(nn.Module):
         attention_mask = torch.cat(mask_chunks, dim=1)
         backbone_dtype = next(self.backbone.parameters()).dtype
         inputs_embeds = inputs_embeds.to(dtype=backbone_dtype)
+        inputs_embeds = torch.nan_to_num(inputs_embeds, nan=0.0, posinf=0.0, neginf=0.0)
         return self.dropout(inputs_embeds), attention_mask
 
     def _pool(self, hidden, attention_mask):
@@ -261,6 +263,8 @@ class LingshuPseudoTokenModel(nn.Module):
         ecg_feats=None,
         ecg_time=None,
         ecg_time_mask=None,
+        router_organ_targets=None,
+        **unused_kwargs,
     ):
         inputs_embeds, attention_mask = self._build_inputs(
             reg_ts=reg_ts,
@@ -388,8 +392,10 @@ class LingshuOrganLoraMoEModel(LingshuPseudoTokenModel):
             logits = projected @ profiles.t()
 
         logits = logits / self.temperature
+        logits = torch.nan_to_num(logits, nan=0.0, posinf=0.0, neginf=0.0)
         top_values, top_indices = torch.topk(logits, k=self.top_k, dim=-1)
         top_gates = torch.softmax(top_values, dim=-1)
+        top_gates = torch.nan_to_num(top_gates, nan=1.0 / self.top_k, posinf=1.0 / self.top_k, neginf=0.0)
         gates = torch.zeros_like(logits, dtype=top_gates.dtype)
         gates.scatter_(1, top_indices, top_gates)
         self.last_router_gates = gates.detach()
@@ -430,6 +436,8 @@ class LingshuOrganLoraMoEModel(LingshuPseudoTokenModel):
         ecg_feats=None,
         ecg_time=None,
         ecg_time_mask=None,
+        router_organ_targets=None,
+        **unused_kwargs,
     ):
         inputs_embeds, attention_mask = self._build_inputs(
             reg_ts=reg_ts,

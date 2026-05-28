@@ -263,8 +263,11 @@ class TSNote_Irg(Dataset):
         ts_tt=torch.tensor([t/self.tt_max for t in ts_tt],dtype=torch.float)
         if self.modeltype == 'TS_CXR':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label, 'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask}
-        elif self.modeltype == 'TS':
+        elif self.modeltype in ['TS', 'TS_MOE']:
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label}
+        elif self.modeltype == 'Text_MOE':
+            return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label":label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
+            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts}
         elif self.modeltype == 'TS_Text':
             return {'idx': idx,'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label":label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
             'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts}

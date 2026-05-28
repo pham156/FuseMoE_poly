@@ -8,6 +8,7 @@
 *.csv
 *.json
 *.svg
+out/
 ./data/
 ./checkpoints/
 ./results/

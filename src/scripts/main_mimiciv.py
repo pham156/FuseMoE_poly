@@ -380,7 +380,7 @@ def main():
             weight_tensor = torch.tensor(pam_class_weights, dtype=torch.float32, device=device)
             model.loss_fct = nn.CrossEntropyLoss(weight=weight_tensor)
 
-    if args.modeltype=='TS':
+    if args.modeltype in ['TS', 'TS_MOE']:
         optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)
     elif args.modeltype=='TS_CXR':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)

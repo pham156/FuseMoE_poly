@@ -61,9 +61,9 @@ def default_expert_profiles(profile_set):
             "electrolyte imbalance, acidosis, alkalosis, glucose, and lactate."
         ),
         (
-            "Infection and inflammation expert. Focuses on sepsis, fever, antibiotics, "
-            "white blood cell count, infection source, inflammatory response, and "
-            "clinical deterioration from infection."
+            "Neurological expert. Focuses on Glasgow Coma Scale, consciousness, "
+            "sedation level, delirium, neurological assessments, seizure, stroke, "
+            "and acute changes in mental status."
         ),
     ]
 
@@ -254,6 +254,12 @@ class MULTCrossModel(nn.Module):
         self.num_modalities = args.num_modalities
         self.use_pt_text_embeddings = args.use_pt_text_embeddings
         self.token_type_embeddings = nn.Embedding(args.num_modalities, args.embed_dim)
+        self.use_learned_missing_embeddings = getattr(args, "use_learned_missing_embeddings", False)
+        if self.use_learned_missing_embeddings:
+            self.missing_modality_embeddings = nn.Embedding(args.num_modalities, args.embed_dim)
+            nn.init.zeros_(self.missing_modality_embeddings.weight)
+        else:
+            self.missing_modality_embeddings = None
         self.use_instruction_router = args.use_instruction_router
         if self.use_instruction_router:
             instruction_embedding = encode_router_instruction(args, Biobert, tokenizer, device, self.modeltype)
@@ -262,7 +268,13 @@ class MULTCrossModel(nn.Module):
             self.router_instruction_embedding = None
 
         if args.use_semantic_expert_profiles:
-            profile_embeddings = encode_expert_profiles(args, Biobert, tokenizer, device)
+            if getattr(args, "semantic_profile_embedding_source", "biolongformer") == "random":
+                profile_dim = args.semantic_project_dim or getattr(Biobert.config, "hidden_size", args.embed_dim) if Biobert is not None else args.embed_dim
+                generator = torch.Generator(device="cpu")
+                generator.manual_seed(int(args.seed) + 7919)
+                profile_embeddings = torch.randn(4, profile_dim, generator=generator, dtype=torch.float32).to(device)
+            else:
+                profile_embeddings = encode_expert_profiles(args, Biobert, tokenizer, device)
             self.register_buffer("semantic_expert_profile_embeddings", profile_embeddings)
             args.semantic_profile_embeddings = profile_embeddings
         else:
@@ -456,7 +468,17 @@ class MULTCrossModel(nn.Module):
                                   kv_seq_len=kv_seq_len)
 
     def get_cross_network(self, args, layers=-1):
-        embed_dim, q_seq_len = self.d_ts, self.tt_max
+        if hasattr(self, "d_ts"):
+            embed_dim = self.d_ts
+        elif hasattr(self, "d_txt"):
+            embed_dim = self.d_txt
+        elif hasattr(self, "d_cxr"):
+            embed_dim = self.d_cxr
+        elif hasattr(self, "d_ecg"):
+            embed_dim = self.d_ecg
+        else:
+            raise ValueError("No modality embedding dimension found for cross network")
+        q_seq_len = self.tt_max
         return TransformerCrossEncoder(args=args,
                                         embed_dim=embed_dim,
                                         num_heads=self.num_heads,
@@ -488,6 +510,21 @@ class MULTCrossModel(nn.Module):
         missing_mask[missing_indices] = False
         non_missing = all_indices[missing_mask]
         return missing_indices, non_missing
+
+    def _missing_modality_fill(self, modality_id, num_missing, device, dtype):
+        if self.missing_modality_embeddings is None or num_missing == 0:
+            return torch.zeros(
+                (self.args.tt_max, num_missing, self.args.embed_dim),
+                dtype=dtype,
+                device=device,
+            )
+        ids = torch.full(
+            (self.args.tt_max, num_missing),
+            int(modality_id),
+            dtype=torch.long,
+            device=device,
+        )
+        return self.missing_modality_embeddings(ids).to(dtype=dtype)
 
     def _compute_note_semantic_profile_logits(self, text_emb, note_time_mask_list):
         if (
@@ -647,7 +684,7 @@ class MULTCrossModel(nn.Module):
             proj_x_ts += self.token_type_embeddings(torch.zeros((self.args.tt_max, x_ts.shape[0]), dtype=torch.long, device=x_ts.device))
 
         missing_recon_loss = None
-        mod_count = 1
+        mod_count = 1 if "TS" in self.modeltype else 0
         if "Text" in self.modeltype:
             # compute irregular clinical notes attention
             # if text_missing is None or torch.all(text_missing == 0):
@@ -655,6 +692,8 @@ class MULTCrossModel(nn.Module):
                 x_txt = text_emb
             else:
                 x_txt = self.bertrep(input_ids_sequences, attn_mask_sequences)
+            text_batch_size = x_txt.shape[0]
+            text_device = x_txt.device
 
             semantic_profile_logits = self._compute_note_semantic_profile_logits(
                 x_txt,
@@ -663,7 +702,7 @@ class MULTCrossModel(nn.Module):
 
             if self.irregular_learn_emb_text:
                 time_key = self.learn_time_embedding(note_time_list).to(self.device)
-                if not self.irregular_learn_emb_ts:
+                if "TS" not in self.modeltype or not self.irregular_learn_emb_ts:
                     time_query = self.learn_time_embedding(self.time_query.unsqueeze(0)).to(self.device)
                 proj_x_txt=self.time_attn_text(time_query, time_key, x_txt, note_time_mask_list)
                 proj_x_txt=proj_x_txt.transpose(0, 1)
@@ -672,18 +711,23 @@ class MULTCrossModel(nn.Module):
                 proj_x_txt = x_txt if self.orig_d_txt == self.d_txt else self.proj_txt(x_txt)
                 proj_x_txt = proj_x_txt.permute(2, 0, 1)
             if text_missing is None or torch.all(text_missing == 0):
-                proj_x_txt += self.token_type_embeddings(torch.ones((self.args.tt_max, x_ts.shape[0]), dtype=torch.long, device=x_ts.device))
+                proj_x_txt += self.token_type_embeddings(mod_count * torch.ones((self.args.tt_max, text_batch_size), dtype=torch.long, device=text_device))
             elif not torch.all(text_missing == 0):
                 missing_indices, non_missing = self._missing_indices(text_missing)
-                proj_x_txt[:, non_missing, :] += self.token_type_embeddings(torch.ones((self.args.tt_max, len(non_missing)), dtype=torch.long, device=x_ts.device))
-                proj_x_txt[:, missing_indices, :] = torch.zeros((self.args.tt_max, len(missing_indices), self.args.embed_dim), dtype=torch.float16, device=x_ts.device)
+                proj_x_txt[:, non_missing, :] += self.token_type_embeddings(mod_count * torch.ones((self.args.tt_max, len(non_missing)), dtype=torch.long, device=text_device))
+                proj_x_txt[:, missing_indices, :] = self._missing_modality_fill(
+                    mod_count,
+                    len(missing_indices),
+                    text_device,
+                    proj_x_txt.dtype,
+                )
             mod_count += 1
 
         if "CXR" in self.modeltype:
             # compute irregular clinical notes attention
             if self.irregular_learn_emb_cxr:
                 time_key = self.learn_time_embedding(cxr_time).to(self.device)
-                if not self.irregular_learn_emb_ts:
+                if "TS" not in self.modeltype or not self.irregular_learn_emb_ts:
                     time_query = self.learn_time_embedding(self.time_query.unsqueeze(0)).to(self.device)
 
                 proj_x_cxr=self.time_attn_cxr(time_query, time_key, cxr_feats, cxr_time_mask)
@@ -698,14 +742,19 @@ class MULTCrossModel(nn.Module):
                 # proj_x_cxr = None
                 missing_indices, non_missing = self._missing_indices(cxr_missing)
                 proj_x_cxr[:, non_missing, :] += self.token_type_embeddings(mod_count * torch.ones((self.args.tt_max, len(non_missing)), dtype=torch.long, device=x_ts.device))
-                proj_x_cxr[:, missing_indices, :] = torch.zeros((self.args.tt_max, len(missing_indices), self.args.embed_dim), dtype=torch.float16, device=x_ts.device)
+                proj_x_cxr[:, missing_indices, :] = self._missing_modality_fill(
+                    mod_count,
+                    len(missing_indices),
+                    x_ts.device,
+                    proj_x_cxr.dtype,
+                )
             mod_count += 1
 
         if "ECG" in self.modeltype:
             # compute irregular ECG attention
             if self.irregular_learn_emb_cxr:
                 time_key = self.learn_time_embedding(ecg_time).to(self.device)
-                if not self.irregular_learn_emb_ts:
+                if "TS" not in self.modeltype or not self.irregular_learn_emb_ts:
                     time_query = self.learn_time_embedding(self.time_query.unsqueeze(0)).to(self.device)
 
                 proj_x_ecg=self.time_attn_ecg(time_query, time_key, ecg_feats, ecg_time_mask)
@@ -721,7 +770,12 @@ class MULTCrossModel(nn.Module):
                 # proj_x_ecg = None
                 missing_indices, non_missing = self._missing_indices(ecg_missing)
                 proj_x_ecg[:, non_missing, :] += self.token_type_embeddings(torch.ones((self.args.tt_max, len(non_missing)), dtype=torch.long, device=x_ts.device))
-                proj_x_ecg[:, missing_indices, :] = torch.zeros((self.args.tt_max, len(missing_indices), self.args.embed_dim), dtype=torch.float16, device=x_ts.device)
+                proj_x_ecg[:, missing_indices, :] = self._missing_modality_fill(
+                    mod_count,
+                    len(missing_indices),
+                    x_ts.device,
+                    proj_x_ecg.dtype,
+                )
             mod_count += 1
 
         if self.use_missing_modality_recon:
@@ -755,6 +809,22 @@ class MULTCrossModel(nn.Module):
                 hiddens, balance_loss = self.trans_self_cross_ts_txt(
                     [proj_x_txt, proj_x_ts],
                     ['txt', 'ts'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
+                )
+            elif self.modeltype == "Text_MOE":
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_txt],
+                    ['txt'],
+                    instruction_embedding=self.router_instruction_embedding,
+                    semantic_profile_logits=semantic_profile_logits,
+                    router_organ_targets=router_organ_targets,
+                )
+            elif self.modeltype == "TS_MOE":
+                hiddens, balance_loss = self.trans_self_cross_ts_txt(
+                    [proj_x_ts],
+                    ['ts'],
                     instruction_embedding=self.router_instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
                     router_organ_targets=router_organ_targets,

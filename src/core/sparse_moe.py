@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 import numpy as np
+import math
 from core.activations import ACT2FN
 from utils.config import MoEConfig
 import pdb
@@ -116,6 +117,20 @@ class SparseDispatcher(object):
         # back to log space
         return combined.log()
 
+    def combine_linear(self, expert_out, multiply_by_gates=True):
+        """Weighted sum for experts that emit ordinary feature deltas."""
+        stitched = torch.cat(expert_out, 0)
+        if multiply_by_gates:
+            stitched = stitched.mul(self._nonzero_gates)
+        zeros = torch.zeros(
+            self._gates.size(0),
+            expert_out[-1].size(1),
+            requires_grad=True,
+            device=stitched.device,
+            dtype=stitched.dtype,
+        )
+        return zeros.index_add(0, self._batch_index, stitched.float())
+
     def expert_to_gates(self):
         """Gate values corresponding to the examples in the per-expert `Tensor`s.
         Returns:
@@ -142,6 +157,23 @@ class MLP(nn.Module):
         out = self.fc2(out)
         out = self.log_soft(out)
         return out
+
+
+class FeatureMLP(nn.Module):
+    """MLP expert that emits hidden features instead of log probabilities."""
+
+    def __init__(self, config:MoEConfig, input_size:int, output_size:int, hidden_size:int):
+        super(FeatureMLP, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(config.dropout)
+        self.activation = ACT2FN[config.hidden_act]
+
+    def forward(self, x):
+        out = self.fc1(x)
+        out = self.activation(out)
+        out = self.dropout(out)
+        return self.fc2(out)
 
 
 class LoRAExpert(nn.Module):
@@ -194,11 +226,47 @@ class LoRAExpert(nn.Module):
         return self.log_soft(out)
 
 
+class ResidualLoRAExpert(nn.Module):
+    """Low-rank residual expert for staged shared-FFN adaptation.
+
+    The shared FFN is trained first and then frozen. These experts only learn
+    residual deltas that are routed on top of the frozen shared FFN output:
+
+        y = SharedFFN_frozen(x) + sum_i gate_i * ((x A_i) B_i)
+    """
+
+    def __init__(
+        self,
+        config: MoEConfig,
+        input_size: int,
+        output_size: int,
+        hidden_size: int,
+    ):
+        super(ResidualLoRAExpert, self).__init__()
+        rank = config.lora_rank
+        if rank <= 0:
+            raise ValueError("lora_rank must be positive")
+        self.lora_A = nn.Linear(input_size, rank, bias=False)
+        self.lora_B = nn.Linear(rank, output_size, bias=False)
+        self.dropout = nn.Dropout(config.lora_dropout)
+        self.scaling = config.lora_alpha / rank
+
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=np.sqrt(5))
+        nn.init.zeros_(self.lora_B.weight)
+
+    def forward(self, x):
+        return self.lora_B(self.lora_A(self.dropout(x))) * self.scaling
+
+
 def build_expert(config: MoEConfig, input_size: int, output_size: int, hidden_size: int):
     if config.expert_type == "mlp":
+        if getattr(config, "moe_mixing_space", "logprob") == "linear":
+            return FeatureMLP(config, input_size, output_size, hidden_size)
         return MLP(config, input_size, output_size, hidden_size)
     if config.expert_type == "lora":
         return LoRAExpert(config, input_size, output_size, hidden_size)
+    if config.expert_type == "residual_lora":
+        return ResidualLoRAExpert(config, input_size, output_size, hidden_size)
     raise ValueError(f"Unknown expert_type: {config.expert_type}")
 
 
@@ -231,9 +299,20 @@ class MoE(nn.Module):
         self.student_degree = config.student_degree
         self.normalized = config.normalized
         self.use_bias = config.use_bias
+        self.router_bias_mode = getattr(config, "router_bias_mode", "mul")
+        self.gate_normalization = getattr(config, "gate_normalization", "selected")
+        self.router_topk_mode = getattr(config, "router_topk_mode", "k_plus_1")
+        self.moe_mixing_space = getattr(config, "moe_mixing_space", "logprob")
+        self.load_balance_mode = getattr(config, "load_balance_mode", "cv")
         self.shared_experts = config.shared_experts
+        self.shared_expert_weight = float(getattr(config, "shared_expert_weight", 1.0))
+        self.freeze_shared_ffn = bool(getattr(config, "freeze_shared_ffn", False))
         self.use_temp = config.use_temp
         self.expert_type = config.expert_type
+        self.staged_shared_lora = getattr(config, "staged_shared_lora", False)
+        self.staged_shared_lora_warmup_epochs = int(getattr(config, "staged_shared_lora_warmup_epochs", 8))
+        self.staged_shared_lora_phase = "disabled"
+        self.expert_orth_coef = getattr(config, "expert_orth_coef", 0.0)
         self.use_instruction_router = config.use_instruction_router
         self.router_instruction_dim = config.router_instruction_dim
         self.instruction_router_scale = config.instruction_router_scale
@@ -242,6 +321,7 @@ class MoE(nn.Module):
         self.semantic_profile_scale = config.semantic_profile_scale
         self.semantic_profile_fusion = config.semantic_profile_fusion
         self.semantic_profile_source = config.semantic_profile_source
+        self.semantic_project_dim = getattr(config, "semantic_project_dim", None)
         self.semantic_profile_modalities = config.semantic_profile_modalities or ["txt"]
         self.use_prototype_router = config.use_prototype_router
         self.prototype_router_dim = config.prototype_router_dim
@@ -254,14 +334,34 @@ class MoE(nn.Module):
         self.router_z_loss_coef = getattr(config, "router_z_loss_coef", 0.0)
         self.router_z_loss_type = getattr(config, "router_z_loss_type", "logsumexp")
         self.router_entropy_coef = getattr(config, "router_entropy_coef", 0.0)
+        self.router_variance_coef = getattr(config, "router_variance_coef", 0.0)
+        self.output_orth_coef = getattr(config, "output_orth_coef", 0.0)
+        self.specialization_loss_mode = getattr(config, "specialization_loss_mode", "legacy")
+        self.specialization_aux_coef = float(getattr(config, "specialization_aux_coef", 1e-3))
         self.dense_warmup_epochs = getattr(config, "dense_warmup_epochs", 0)
         self.router_temperature = max(float(getattr(config, "router_temperature", 1.0)), 1e-6)
+        self.router_noise_scale = max(float(getattr(config, "router_noise_scale", 1.0)), 0.0)
+        router_noise_final_scale = getattr(config, "router_noise_final_scale", None)
+        self.router_noise_final_scale = (
+            None
+            if router_noise_final_scale is None
+            else max(float(router_noise_final_scale), 0.0)
+        )
+        self.router_noise_decay_epochs = max(int(getattr(config, "router_noise_decay_epochs", 0)), 0)
+        self.router_init = getattr(config, "router_init", "zero")
+        self.router_init_std = float(getattr(config, "router_init_std", 0.02))
         self.use_xmoe_router = getattr(config, "use_xmoe_router", False)
         self.xmoe_router_dim = getattr(config, "xmoe_router_dim", 128)
         self.xmoe_router_init_norm = getattr(config, "xmoe_router_init_norm", 0.1)
         self.xmoe_noise_scale = max(float(getattr(config, "xmoe_noise_scale", 1.0)), 0.0)
+        self.log_expert_output_diagnostics = getattr(config, "log_expert_output_diagnostics", False)
         self.current_epoch = 0
         self._last_router_logits_for_loss = None
+        self._output_orth_losses = []
+        self._paper_aux_scale_target = None
+        self._specialization_metric_records = []
+        self.last_specialization_diagnostics = None
+        self.last_expert_output_diagnostics = None
 
         # instantiate experts
         if self.use_xmoe_router:
@@ -310,6 +410,8 @@ class MoE(nn.Module):
         else:
             self.w_gate = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
             self.w_noise = nn.Parameter(torch.zeros(self.input_size, self.num_experts), requires_grad=True)
+
+        self._reset_standard_router()
 
         if self.use_prototype_router:
             if self.router_type == 'disjoint':
@@ -391,22 +493,30 @@ class MoE(nn.Module):
                 raise ValueError("semantic_profile_embeddings must be set when use_semantic_expert_profiles=True")
             self.register_buffer("semantic_profile_embeddings", semantic_profiles.detach().float())
             profile_dim = semantic_profiles.size(-1)
+            semantic_dim = int(self.semantic_project_dim) if self.semantic_project_dim else profile_dim
             if self.router_type in ['disjoint', 'permod']:
                 input_dim = self.input_size // self.num_modalities
                 self.semantic_input_proj = nn.ModuleList([
-                    nn.Linear(input_dim, profile_dim, bias=False)
+                    nn.Linear(input_dim, semantic_dim, bias=False)
                     for _ in range(self.num_modalities)
                 ])
             else:
-                self.semantic_input_proj = nn.Linear(self.input_size, profile_dim, bias=False)
+                self.semantic_input_proj = nn.Linear(self.input_size, semantic_dim, bias=False)
+            self.semantic_profile_proj = (
+                nn.Linear(profile_dim, semantic_dim, bias=False)
+                if semantic_dim != profile_dim
+                else None
+            )
         elif self.use_semantic_expert_profiles:
             if semantic_profiles is None:
                 raise ValueError("semantic_profile_embeddings must be set when use_semantic_expert_profiles=True")
             self.register_buffer("semantic_profile_embeddings", semantic_profiles.detach().float())
             self.semantic_input_proj = None
+            self.semantic_profile_proj = None
         else:
             self.semantic_profile_embeddings = None
             self.semantic_input_proj = None
+            self.semantic_profile_proj = None
 
         if self.router_type == 'disjoint':
             self.experts = nn.ModuleList(
@@ -442,6 +552,9 @@ class MoE(nn.Module):
                 self.omega = nn.Parameter(torch.zeros(self.shared_experts))   # passed through softmax
             else:
                 self.omega = nn.Parameter(torch.ones(self.shared_experts)) 
+            if self.freeze_shared_ffn:
+                for param in self.shared_mlps.parameters():
+                    param.requires_grad = False
         else:
             self.shared_mlps = None
             self.omega = None
@@ -456,10 +569,79 @@ class MoE(nn.Module):
         self.register_buffer("mean", torch.tensor([0.0]))
         self.register_buffer("std", torch.tensor([1.0]))
 
+        if self.staged_shared_lora:
+            if self.expert_type != "residual_lora":
+                raise ValueError("--staged_shared_lora requires --expert_type residual_lora")
+            if self.shared_experts <= 0:
+                raise ValueError("--staged_shared_lora requires --shared_experts >= 1")
+            self._configure_staged_shared_lora_phase(0)
+
         assert(self.k <= self.num_experts)
 
     def set_current_epoch(self, epoch):
         self.current_epoch = int(epoch)
+        if self.staged_shared_lora:
+            self._configure_staged_shared_lora_phase(self.current_epoch)
+
+    def _iter_router_parameters(self):
+        router_objects = [
+            self.w_gate,
+            self.w_noise,
+            self.bias,
+            self.xmoe_router_proj,
+            self.xmoe_noise_proj,
+            self.xmoe_expert_embeddings,
+            self.prototype_query_proj,
+            self.router_prototypes,
+            self.instruction_router,
+            self.instruction_input_proj,
+            self.semantic_input_proj,
+            self.log_tau,
+        ]
+        for obj in router_objects:
+            if obj is None:
+                continue
+            if isinstance(obj, nn.Parameter):
+                yield obj
+            elif isinstance(obj, (list, tuple, nn.ParameterList, nn.ModuleList)):
+                for item in obj:
+                    if item is None:
+                        continue
+                    if isinstance(item, nn.Parameter):
+                        yield item
+                    elif isinstance(item, nn.Module):
+                        yield from item.parameters()
+            elif isinstance(obj, nn.Module):
+                yield from obj.parameters()
+
+    def _set_requires_grad(self, module_or_params, requires_grad):
+        if module_or_params is None:
+            return
+        if isinstance(module_or_params, nn.Parameter):
+            module_or_params.requires_grad = requires_grad
+            return
+        if isinstance(module_or_params, (list, tuple, nn.ModuleList, nn.ParameterList)):
+            for item in module_or_params:
+                self._set_requires_grad(item, requires_grad)
+            return
+        for param in module_or_params.parameters():
+            param.requires_grad = requires_grad
+
+    def _configure_staged_shared_lora_phase(self, epoch):
+        phase = "shared_pretrain" if epoch < self.staged_shared_lora_warmup_epochs else "lora_adapt"
+        if phase == self.staged_shared_lora_phase:
+            return
+        self.staged_shared_lora_phase = phase
+        if phase == "shared_pretrain":
+            self._set_requires_grad(self.shared_mlps, True)
+            self._set_requires_grad(self.experts, False)
+            for param in self._iter_router_parameters():
+                param.requires_grad = False
+        else:
+            self._set_requires_grad(self.shared_mlps, False)
+            self._set_requires_grad(self.experts, True)
+            for param in self._iter_router_parameters():
+                param.requires_grad = True
 
     def _use_dense_warmup(self):
         return (
@@ -467,6 +649,12 @@ class MoE(nn.Module):
             and self.dense_warmup_epochs > 0
             and self.current_epoch < self.dense_warmup_epochs
         )
+
+    def _current_router_noise_scale(self):
+        if self.router_noise_final_scale is None or self.router_noise_decay_epochs <= 0:
+            return self.router_noise_scale
+        progress = min(max(self.current_epoch, 0), self.router_noise_decay_epochs) / self.router_noise_decay_epochs
+        return self.router_noise_scale + progress * (self.router_noise_final_scale - self.router_noise_scale)
 
     def _build_prototype_query_proj(self, input_dim):
         return nn.Sequential(
@@ -482,6 +670,30 @@ class MoE(nn.Module):
                 nn.init.xavier_uniform_(prototypes)
         else:
             nn.init.xavier_uniform_(self.router_prototypes)
+
+    def _iter_router_params(self, param_or_list):
+        if isinstance(param_or_list, (list, nn.ParameterList)):
+            return param_or_list
+        return [param_or_list]
+
+    def _reset_standard_router(self):
+        # Original FuseMoE uses exact-zero router weights. Random modes are an
+        # explicit DeepSeek-style ablation to remove deterministic top-k ties.
+        if self.use_xmoe_router:
+            return
+        for gate in self._iter_router_params(self.w_gate):
+            if self.router_init == "zero":
+                nn.init.zeros_(gate)
+            elif self.router_init == "normal":
+                nn.init.normal_(gate, mean=0.0, std=self.router_init_std)
+            elif self.router_init == "xavier":
+                nn.init.xavier_uniform_(gate)
+            elif self.router_init == "kaiming":
+                nn.init.kaiming_uniform_(gate, a=math.sqrt(5))
+            else:
+                raise ValueError(f"Unknown router_init={self.router_init}")
+        for noise in self._iter_router_params(self.w_noise):
+            nn.init.zeros_(noise)
 
     def _reset_xmoe_router(self):
         if isinstance(self.xmoe_router_proj, nn.ModuleList):
@@ -652,6 +864,8 @@ class MoE(nn.Module):
 
     def _profile_bank_for_logits(self, num_logits, device, dtype):
         profiles = self.semantic_profile_embeddings.to(device=device, dtype=dtype)
+        if self.semantic_profile_proj is not None:
+            profiles = self.semantic_profile_proj(profiles)
         if profiles.size(0) >= num_logits:
             return profiles[:num_logits]
         repeats = int(np.ceil(num_logits / profiles.size(0)))
@@ -771,6 +985,40 @@ class MoE(nn.Module):
             loss = loss + (sim - eye).pow(2).mean()
         return loss * self.prototype_router_orth_coef
 
+    def _expert_signature(self, expert):
+        if isinstance(expert, LoRAExpert):
+            return expert.lora_A.weight.flatten()
+        if isinstance(expert, MLP):
+            return expert.fc1.weight.flatten()
+        params = [p.flatten() for p in expert.parameters() if p.requires_grad and p.ndim >= 2]
+        if not params:
+            return None
+        return torch.cat(params)
+
+    def _expert_bank_orthogonality_loss(self, expert_bank):
+        signatures = []
+        for expert in expert_bank:
+            signature = self._expert_signature(expert)
+            if signature is not None:
+                signatures.append(F.normalize(signature, dim=0))
+        if len(signatures) < 2:
+            return 0
+        matrix = torch.stack(signatures, dim=0)
+        sim = matrix @ matrix.t()
+        eye = torch.eye(sim.size(0), device=sim.device, dtype=sim.dtype)
+        return (sim - eye).pow(2).mean()
+
+    def _expert_orthogonality_loss(self):
+        if self.expert_orth_coef <= 0:
+            return 0
+        if self.router_type == 'disjoint':
+            losses = [self._expert_bank_orthogonality_loss(bank) for bank in self.experts]
+            losses = [loss for loss in losses if isinstance(loss, torch.Tensor)]
+            if not losses:
+                return 0
+            return torch.stack(losses).mean() * self.expert_orth_coef
+        return self._expert_bank_orthogonality_loss(self.experts) * self.expert_orth_coef
+
     def _get_logits(self, x, train, noise_epsilon, idx=None, instruction_embedding=None, semantic_profile_logits=None, modality=None):
         x = self._fuse_instruction_input(x, instruction_embedding, idx=idx)
         bias = None
@@ -825,7 +1073,17 @@ class MoE(nn.Module):
                 dist = dist / temp
             clean_logits = torch.sigmoid(-dist)
 
+        learned_logits_before_semantic = clean_logits
         clean_logits, semantic_logits = self._apply_semantic_logits(clean_logits, x, idx=idx)
+        if semantic_logits is not None:
+            learned_mag = learned_logits_before_semantic.detach().float().abs().mean()
+            semantic_mag = semantic_logits.detach().float().abs().mean()
+            denom = learned_mag + semantic_mag + 1e-12
+            self._specialization_metric_records.append({
+                "semantic_logit_abs": semantic_mag,
+                "learned_logit_abs": learned_mag,
+                "semantic_contribution_ratio": semantic_mag / denom,
+            })
         clean_logits = self._apply_external_semantic_logits(clean_logits, semantic_profile_logits, modality=modality)
 
         instruction_logits = self._instruction_logits(
@@ -849,7 +1107,7 @@ class MoE(nn.Module):
             logits = noisy_logits
         elif self.noisy_gating and prototype_logits is None:
             raw_noise_stddev = x @ w_noise
-            noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon) * train)
+            noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon) * train * self._current_router_noise_scale())
 
             if self.gating == 'poly':
                 dist = torch.cdist(x, torch.t(w_gate))
@@ -910,10 +1168,14 @@ class MoE(nn.Module):
             logits = clean_logits
 
         if bias is not None:
-            # print("Applying bias to logits")
-            logits = logits * torch.exp(bias)
-            clean_logits = clean_logits * torch.exp(bias)
-            noisy_logits = noisy_logits * torch.exp(bias)
+            if self.router_bias_mode == "add":
+                logits = logits + bias
+                clean_logits = clean_logits + bias
+                noisy_logits = noisy_logits + bias
+            else:
+                logits = logits * torch.exp(bias)
+                clean_logits = clean_logits * torch.exp(bias)
+                noisy_logits = noisy_logits * torch.exp(bias)
 
         return logits, clean_logits, noisy_logits, noise_stddev
 
@@ -944,14 +1206,23 @@ class MoE(nn.Module):
         # modality, so use logits.size(1) instead of the global expert count.
         num_available_experts = logits.size(1)
         effective_k = min(k, num_available_experts)
-        top_logits, top_indices = logits.topk(min(effective_k + 1, num_available_experts), dim=1)
+        top_m = effective_k
+        if self.router_topk_mode == "k_plus_1" and self.noisy_gating:
+            top_m = min(effective_k + 1, num_available_experts)
+        top_logits, top_indices = logits.topk(min(top_m, num_available_experts), dim=1)
         top_k_logits = top_logits[:, :effective_k]
         top_k_indices = top_indices[:, :effective_k]
         if self.gating == 'softmax':
-            if self.normalized:
-                top_k_gates = self.softmax(top_k_logits)
+            if self.gate_normalization in ["full", "full_renorm"]:
+                full_probs = self.softmax(logits / self.router_temperature)
+                top_k_gates = torch.gather(full_probs, 1, top_k_indices)
+                if self.gate_normalization == "full_renorm" and self.normalized:
+                    top_k_gates = top_k_gates / top_k_gates.sum(dim=1, keepdim=True).clamp_min(1e-12)
             else:
-                top_k_gates = torch.exp(top_k_logits)
+                if self.normalized:
+                    top_k_gates = self.softmax(top_k_logits)
+                else:
+                    top_k_gates = torch.exp(top_k_logits)
         elif self.gating == 'laplace' or self.gating == 'gaussian':
             if self.normalized:
                 top_k_gates = torch.exp(top_k_logits - torch.logsumexp(top_k_logits, dim=1, keepdim=True))
@@ -1072,37 +1343,219 @@ class MoE(nn.Module):
         entropy = torch.stack(entropies).mean()
         return -self.router_entropy_coef * entropy
 
+    def _compute_router_variance_loss(self, gates, apply_coef=True):
+        if self.router_variance_coef <= 0:
+            return 0
+
+        gates_list = gates if isinstance(gates, list) else [gates]
+        variances = []
+        for gate_tensor in gates_list:
+            if gate_tensor.size(0) <= 1:
+                continue
+            variances.append(gate_tensor.float().var(dim=0, unbiased=False).mean())
+        if not variances:
+            return 0
+        # Negative because the optimizer minimizes the total loss.
+        raw_loss = -torch.stack(variances).mean()
+        return self.router_variance_coef * raw_loss if apply_coef else raw_loss
+
+    def _selected_output_orthogonality_loss(self, dispatcher, expert_outputs, log_space=True, apply_coef=True):
+        if self.output_orth_coef <= 0 or not expert_outputs:
+            return 0
+
+        selected = torch.cat(expert_outputs, dim=0)
+        if selected.size(0) == 0:
+            return 0
+        if log_space:
+            selected = selected.exp()
+        selected = selected.float()
+
+        batch_index = dispatcher._batch_index.to(selected.device)
+        losses = []
+        cos_abs_values = []
+        cos_sq_values = []
+        pair_counts = []
+        for batch_id in torch.unique(batch_index):
+            reps = selected[batch_index == batch_id]
+            if reps.size(0) < 2:
+                continue
+            reps = reps.flatten(start_dim=1)
+            pair_losses = []
+            for j in range(reps.size(0)):
+                for k in range(reps.size(0)):
+                    if j == k:
+                        continue
+                    src_norm = reps[j].pow(2).sum().clamp_min(1e-12).sqrt()
+                    dst_norm_sq = reps[k].pow(2).sum().clamp_min(1e-12)
+                    dst_norm = dst_norm_sq.sqrt()
+                    dot = torch.dot(reps[j], reps[k])
+                    cos = dot / (src_norm * dst_norm).clamp_min(1e-12)
+                    projection = (dot / dst_norm_sq) * reps[k]
+                    pair_losses.append(projection.pow(2).sum())
+                    cos_abs_values.append(cos.abs())
+                    cos_sq_values.append(cos.pow(2))
+            if pair_losses:
+                losses.append(torch.stack(pair_losses).mean())
+                pair_counts.append(float(len(pair_losses)))
+        if not losses:
+            return 0
+        metric_device = losses[0].device
+        self._specialization_metric_records.append({
+            "expert_projection_norm": torch.stack(losses).mean().detach(),
+            "expert_cos_abs": (torch.stack(cos_abs_values).mean().detach() if cos_abs_values else torch.zeros((), device=metric_device)),
+            "expert_cos_sq": (torch.stack(cos_sq_values).mean().detach() if cos_sq_values else torch.zeros((), device=metric_device)),
+            "active_expert_pairs": torch.tensor(sum(pair_counts) / max(len(pair_counts), 1), device=metric_device),
+        })
+        raw_loss = torch.stack(losses).mean()
+        return self.output_orth_coef * raw_loss if apply_coef else raw_loss
+
+    def _compute_gate_specialization_metrics(self, gates):
+        gates_list = gates if isinstance(gates, list) else [gates]
+        metrics = {}
+        entropy_vals = []
+        margin_vals = []
+        batch_var_vals = []
+        top1_vals = []
+        active_vals = []
+        for gate_tensor in gates_list:
+            g = gate_tensor.float()
+            if g.numel() == 0:
+                continue
+            safe_g = g.clamp_min(1e-12)
+            entropy_vals.append(-(safe_g * safe_g.log()).sum(dim=-1).mean())
+            top_vals = torch.topk(g, k=min(2, g.size(-1)), dim=-1).values
+            top1_vals.append(top_vals[:, 0].mean())
+            if top_vals.size(-1) > 1:
+                margin_vals.append((top_vals[:, 0] - top_vals[:, 1]).mean())
+            if g.size(0) > 1:
+                batch_var_vals.append(g.var(dim=0, unbiased=False).mean())
+            active_vals.append((g > 0).float().sum(dim=-1).mean())
+        if entropy_vals:
+            metrics["gate_entropy"] = torch.stack(entropy_vals).mean().detach()
+        if margin_vals:
+            metrics["gate_top12_margin"] = torch.stack(margin_vals).mean().detach()
+        if batch_var_vals:
+            metrics["gate_batch_variance"] = torch.stack(batch_var_vals).mean().detach()
+        if top1_vals:
+            metrics["gate_top1_weight"] = torch.stack(top1_vals).mean().detach()
+        if active_vals:
+            metrics["active_experts_per_sample"] = torch.stack(active_vals).mean().detach()
+        return metrics
+
+    def _finalize_specialization_diagnostics(self, gates):
+        metrics = self._compute_gate_specialization_metrics(gates)
+        if self._specialization_metric_records:
+            keys = sorted(self._specialization_metric_records[0])
+            for key in keys:
+                vals = [record[key].float() for record in self._specialization_metric_records if key in record]
+                if vals:
+                    metrics[key] = torch.stack(vals).mean().detach()
+        self.last_specialization_diagnostics = metrics
+        return metrics
+
+    def _record_output_orthogonality_loss(self, dispatcher, expert_outputs, log_space=True):
+        loss = self._selected_output_orthogonality_loss(
+            dispatcher,
+            expert_outputs,
+            log_space=log_space,
+            apply_coef=(self.specialization_loss_mode != "paper"),
+        )
+        if isinstance(loss, torch.Tensor):
+            self._output_orth_losses.append(loss)
+
+    def _consume_output_orthogonality_loss(self, base_loss):
+        if not self._output_orth_losses:
+            zero = base_loss.new_zeros(())
+            return zero
+        loss = torch.stack(self._output_orth_losses).mean()
+        if self.specialization_loss_mode == "paper":
+            target = self._paper_aux_scale_target
+            if target is not None:
+                scale = target.to(loss.device, loss.dtype) / loss.detach().abs().clamp_min(1e-12)
+                loss = loss * scale
+            loss = self.output_orth_coef * loss
+        return loss
+
     def _compute_loss(self, gates, loads, loss_coef):
         """Compute load balancing loss across all gates."""
-        loss = 0
-        if isinstance(gates, list):
-            for g, l in zip(gates, loads):
-                loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
+        if self.load_balance_mode == "deepseek_aux":
+            loss = self._compute_deepseek_aux_loss(gates)
         else:
-            loss = self.cv_squared(gates.sum(0)) + self.cv_squared(loads)
+            loss = 0
+            if isinstance(gates, list):
+                for g, l in zip(gates, loads):
+                    loss += self.cv_squared(g.sum(0)) + self.cv_squared(l)
+            else:
+                loss = self.cv_squared(gates.sum(0)) + self.cv_squared(loads)
         balance_component = loss
         proto_loss = self._prototype_orthogonality_loss()
         if isinstance(proto_loss, torch.Tensor):
             loss = loss + proto_loss
+        expert_orth_loss = self._expert_orthogonality_loss()
+        if isinstance(expert_orth_loss, torch.Tensor):
+            loss = loss + expert_orth_loss
         z_loss = self._compute_router_z_loss()
         if isinstance(z_loss, torch.Tensor):
             loss = loss + z_loss
         entropy_loss = self._compute_router_entropy_loss(gates)
         if isinstance(entropy_loss, torch.Tensor):
             loss = loss + entropy_loss
-        scaled_loss = loss * loss_coef
+        variance_loss = self._compute_router_variance_loss(
+            gates,
+            apply_coef=(self.specialization_loss_mode != "paper"),
+        )
+        if isinstance(variance_loss, torch.Tensor):
+            loss = loss + variance_loss
+        if self.specialization_loss_mode == "paper":
+            target = balance_component.detach().abs().clamp_min(1e-12)
+            self._paper_aux_scale_target = target
+            scaled_loss = balance_component * self.specialization_aux_coef
+            if isinstance(proto_loss, torch.Tensor):
+                scaled_loss = scaled_loss + proto_loss
+            if isinstance(expert_orth_loss, torch.Tensor):
+                scaled_loss = scaled_loss + expert_orth_loss
+            if isinstance(z_loss, torch.Tensor):
+                scaled_loss = scaled_loss + z_loss
+            if isinstance(entropy_loss, torch.Tensor):
+                scaled_loss = scaled_loss + entropy_loss
+            if isinstance(variance_loss, torch.Tensor):
+                scale = target.to(variance_loss.device, variance_loss.dtype) / variance_loss.detach().abs().clamp_min(1e-12)
+                scaled_loss = scaled_loss + self.router_variance_coef * variance_loss * scale
+        else:
+            self._paper_aux_scale_target = None
+            scaled_loss = loss * loss_coef
         device = scaled_loss.device
         dtype = scaled_loss.dtype
         zero = torch.zeros((), device=device, dtype=dtype)
         self.last_router_aux_components = {
             "balance_unscaled": balance_component.detach(),
             "prototype_orth_unscaled": (proto_loss.detach() if isinstance(proto_loss, torch.Tensor) else zero),
+            "expert_orth_unscaled": (expert_orth_loss.detach() if isinstance(expert_orth_loss, torch.Tensor) else zero),
             "z_loss_unscaled": (z_loss.detach() if isinstance(z_loss, torch.Tensor) else zero),
             "entropy_loss_unscaled": (entropy_loss.detach() if isinstance(entropy_loss, torch.Tensor) else zero),
+            "router_variance_unscaled": (variance_loss.detach() if isinstance(variance_loss, torch.Tensor) else zero),
+            "output_orth_unscaled": zero,
             "total_unscaled": loss.detach(),
             "total_scaled": scaled_loss.detach(),
         }
         return scaled_loss
+
+    def _compute_deepseek_aux_loss(self, gates):
+        gates_list = gates if isinstance(gates, list) else [gates]
+        losses = []
+        for gate_tensor in gates_list:
+            gate_float = gate_tensor.float()
+            if gate_float.numel() == 0:
+                continue
+            num_experts = gate_float.size(1)
+            selected_frac = (gate_float > 0).float().mean(dim=0)
+            score_mean = gate_float.mean(dim=0)
+            losses.append((selected_frac * score_mean).sum() * float(num_experts ** 2))
+        if not losses:
+            if isinstance(gates, list) and gates:
+                return gates[0].new_zeros(())
+            return gates.new_zeros(())
+        return torch.stack(losses).mean()
 
     def _compute_router_organ_supervision_loss(self, gates, router_organ_targets):
         if (
@@ -1145,6 +1598,16 @@ class MoE(nn.Module):
         if self.shared_mlps is None:
             return None
 
+        if self.moe_mixing_space == "linear":
+            if self.normalized:
+                omega = torch.softmax(self.omega, dim=0)
+            else:
+                omega = torch.nn.functional.softplus(self.omega)
+            out = self.shared_mlps[0](x) * omega[0]
+            for i, se in enumerate(self.shared_mlps[1:], 1):
+                out = out + se(x) * omega[i]
+            return out * self.shared_expert_weight
+
         if self.normalized:
             log_omega = torch.log_softmax(self.omega, dim=0)
         else:
@@ -1153,8 +1616,40 @@ class MoE(nn.Module):
         out = self.shared_mlps[0](x) + log_omega[0]
         for i, se in enumerate(self.shared_mlps[1:], 1):
             out = torch.logaddexp(out, se(x) + log_omega[i])
-        return out
+        return out + math.log(max(self.shared_expert_weight, 1e-12))
 
+    def _record_full_expert_output_similarity(self, x, modality_idx=None, experts=None, log_space=True):
+        if not self.log_expert_output_diagnostics or experts is None:
+            return
+        if x is None or x.size(0) == 0:
+            return
+        records = self.last_expert_output_diagnostics
+        if records is None:
+            records = []
+            self.last_expert_output_diagnostics = records
+        with torch.no_grad():
+            outputs = []
+            norms = []
+            for expert in experts:
+                out = expert(x)
+                if log_space:
+                    out = out.exp()
+                out = out.float().flatten(start_dim=1)
+                norms.append(out.norm(dim=-1).mean())
+                outputs.append(out)
+            if len(outputs) < 2:
+                return
+            stacked = torch.stack(outputs, dim=1)
+            normalized = F.normalize(stacked, dim=-1)
+            sim = torch.einsum("bed,bfd->bef", normalized, normalized).mean(dim=0)
+            eye = torch.eye(sim.size(0), device=sim.device, dtype=torch.bool)
+            offdiag = sim[~eye].mean()
+            records.append({
+                "modality_idx": modality_idx,
+                "sim_matrix": sim.detach().cpu(),
+                "offdiag_cos": offdiag.detach().cpu(),
+                "expert_norms": torch.stack(norms).detach().cpu(),
+            })
 
     def _compute_routed_output(self, x, gates, modality_idx=None):
         """Compute routed expert output for a single modality or joint input."""
@@ -1163,27 +1658,80 @@ class MoE(nn.Module):
             dispatcher = SparseDispatcher(sub_experts, gates, self.router_type)
             expert_inputs = dispatcher.dispatch(x)
             expert_outputs = [self.experts[modality_idx][i](expert_inputs[i]) for i in range(sub_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=modality_idx, experts=self.experts[modality_idx], log_space=True)
         elif self.router_type == 'permod':
             dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
             expert_inputs = dispatcher.dispatch(x)
             expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=modality_idx, experts=self.experts, log_space=True)
         else:  # joint
             dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
             expert_inputs = dispatcher.dispatch(x)
             expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=None, experts=self.experts, log_space=True)
+        self._record_output_orthogonality_loss(dispatcher, expert_outputs, log_space=True)
         return dispatcher.combine(expert_outputs)
+
+    def _compute_routed_delta(self, x, gates, modality_idx=None):
+        """Compute routed low-rank residual deltas for staged shared-LoRA."""
+        if self.router_type == 'disjoint':
+            sub_experts = self.num_experts // self.num_modalities
+            dispatcher = SparseDispatcher(sub_experts, gates, self.router_type)
+            expert_inputs = dispatcher.dispatch(x)
+            expert_outputs = [self.experts[modality_idx][i](expert_inputs[i]) for i in range(sub_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=modality_idx, experts=self.experts[modality_idx], log_space=False)
+        elif self.router_type == 'permod':
+            dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
+            expert_inputs = dispatcher.dispatch(x)
+            expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=modality_idx, experts=self.experts, log_space=False)
+        else:
+            dispatcher = SparseDispatcher(self.num_experts, gates, self.router_type)
+            expert_inputs = dispatcher.dispatch(x)
+            expert_outputs = [self.experts[i](expert_inputs[i]) for i in range(self.num_experts)]
+            self._record_full_expert_output_similarity(x, modality_idx=None, experts=self.experts, log_space=False)
+        self._record_output_orthogonality_loss(dispatcher, expert_outputs, log_space=False)
+        return dispatcher.combine_linear(expert_outputs)
 
 
     def _combine_shared_and_routed(self, routed_out, shared_out):
         """Combine shared and routed outputs as a mixture within a modality."""
         if shared_out is None:
             return routed_out
+        with torch.no_grad():
+            routed_linear = routed_out.exp() if self.moe_mixing_space != "linear" else routed_out
+            shared_linear = shared_out.exp() if self.moe_mixing_space != "linear" else shared_out
+            routed_norm = routed_linear.float().flatten(start_dim=1).norm(dim=-1).mean()
+            shared_norm = shared_linear.float().flatten(start_dim=1).norm(dim=-1).mean()
+            self._specialization_metric_records.append({
+                "routed_output_norm": routed_norm.detach(),
+                "shared_output_norm": shared_norm.detach(),
+                "shared_contribution_ratio": shared_norm.detach() / (shared_norm.detach() + routed_norm.detach() + 1e-12),
+            })
+        if self.moe_mixing_space == "linear":
+            return routed_out + shared_out
         out = torch.logaddexp(routed_out, shared_out)
         if self.normalized:
             out = out - np.log(2)  # normalize by number of components in the mixture
-        return out
+        return out + math.log(max(self.shared_expert_weight, 1e-12))
 
     def forward(self, x, train=True, loss_coef=1e-2, modalities=None, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
+        joint_x = torch.cat(x, dim=1) if isinstance(x, list) else x
+        shared_out = self._compute_shared_output(joint_x)
+        self._output_orth_losses = []
+        self._paper_aux_scale_target = None
+        self._specialization_metric_records = []
+        self.last_specialization_diagnostics = None
+        self.last_expert_output_diagnostics = []
+
+        if self.staged_shared_lora and self.staged_shared_lora_phase == "shared_pretrain":
+            if shared_out is None:
+                raise RuntimeError("staged shared-LoRA pretrain phase requires shared_out")
+            zero_loss = shared_out.new_zeros(())
+            self.last_router_diagnostics = None
+            self.last_router_aux_components = None
+            return shared_out, zero_loss
+
         gates, load = self.noisy_top_k_gating(
             x,
             train,
@@ -1210,20 +1758,45 @@ class MoE(nn.Module):
         if isinstance(organ_loss, torch.Tensor):
             loss = loss + organ_loss
 
-        # global shared output: always computed once on full input
-        joint_x = torch.cat(x, dim=1) if isinstance(x, list) else x
-        shared_out = self._compute_shared_output(joint_x)
+        if self.staged_shared_lora:
+            if shared_out is None:
+                raise RuntimeError("staged shared-LoRA adapt phase requires shared_out")
+            if isinstance(gates, list):
+                delta = 0
+                for j, g in enumerate(gates):
+                    delta = delta + self._compute_routed_delta(x[j], g, modality_idx=j)
+            else:
+                delta = self._compute_routed_delta(joint_x, gates)
+            output_orth_loss = self._consume_output_orthogonality_loss(loss)
+            loss = loss + output_orth_loss
+            if self.last_router_aux_components is not None:
+                self.last_router_aux_components["output_orth_unscaled"] = output_orth_loss.detach()
+                self.last_router_aux_components["total_scaled"] = loss.detach()
+            self._finalize_specialization_diagnostics(gates)
+            return shared_out + delta, loss
 
         if isinstance(gates, list):
             # permod or disjoint
             y = 0
             for j, g in enumerate(gates):
-                routed_out = self._compute_routed_output(x[j], g, modality_idx=j)
+                if self.moe_mixing_space == "linear":
+                    routed_out = self._compute_routed_delta(x[j], g, modality_idx=j)
+                else:
+                    routed_out = self._compute_routed_output(x[j], g, modality_idx=j)
                 y += routed_out
             y = self._combine_shared_and_routed(y, shared_out)
         else:
             # joint
-            routed_out = self._compute_routed_output(joint_x, gates)
+            if self.moe_mixing_space == "linear":
+                routed_out = self._compute_routed_delta(joint_x, gates)
+            else:
+                routed_out = self._compute_routed_output(joint_x, gates)
             y = self._combine_shared_and_routed(routed_out, shared_out)
 
+        output_orth_loss = self._consume_output_orthogonality_loss(loss)
+        loss = loss + output_orth_loss
+        if self.last_router_aux_components is not None:
+            self.last_router_aux_components["output_orth_unscaled"] = output_orth_loss.detach()
+            self.last_router_aux_components["total_scaled"] = loss.detach()
+        self._finalize_specialization_diagnostics(gates)
         return y, loss

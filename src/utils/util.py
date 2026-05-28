@@ -177,13 +177,24 @@ def parse_args():
     parser.add_argument("--noisy_gating", type=str2bool, default=True, help="Enable or disable noisy gating (True/False).")
     parser.add_argument("--normalized", type=str2bool, default=True, help="Enable or disable normalization (True/False).")
     parser.add_argument('--use_bias', type=str2bool, default=False, help='Add a learnable bias per expert in polynomial/student‑t gating')
+    parser.add_argument('--router_bias_mode', default='mul', choices=['mul', 'add'], help='How --use_bias affects router logits. mul preserves old FuseMoE behavior; add is closer to DeepSeek-V3 selection bias.')
+    parser.add_argument('--gate_normalization', default='selected', choices=['selected', 'full', 'full_renorm'], help='selected normalizes selected top-k logits. full uses full softmax scores before top-k. full_renorm renormalizes gathered full-softmax top-k weights.')
+    parser.add_argument('--router_topk_mode', default='k_plus_1', choices=['k_plus_1', 'k'], help='k_plus_1 preserves Shazeer/FuseMoE noisy-load threshold. k uses exact top-k selection like DeepSeek when noisy load estimation is not needed.')
+    parser.add_argument('--moe_mixing_space', default='logprob', choices=['logprob', 'linear'], help='logprob preserves FuseMoE log-space expert mixing. linear mixes ordinary hidden feature outputs like transformer MoE FFN experts.')
+    parser.add_argument('--load_balance_mode', default='cv', choices=['cv', 'deepseek_aux'], help='cv preserves FuseMoE CV importance/load loss. deepseek_aux uses count/probability-style auxiliary routing loss.')
     parser.add_argument('--shared_experts', type=int, default=0, help='Number of shared experts (always active). Default 0 = no shared experts.')
+    parser.add_argument('--enable_shared_expert', action='store_true', help='Alias for --shared_experts 1. Keeps the shared FFN always active.')
+    parser.add_argument('--shared_expert_weight', default=1.0, type=float, help='Scale applied to the always-active shared FFN output before combining with routed experts.')
+    parser.add_argument('--freeze_shared_ffn', action='store_true', help='Freeze shared FFN/shared expert parameters after initialization.')
     parser.add_argument('--use_temp', type=str2bool, default=False, help='Temperature parameter for softmax gating function.')
-    parser.add_argument('--expert_type', default='mlp', choices=['mlp', 'lora'], help='Expert module type inside MoE. Use lora for frozen-base low-rank expert deltas.')
+    parser.add_argument('--expert_type', default='mlp', choices=['mlp', 'lora', 'residual_lora'], help='Expert module type inside MoE. residual_lora is used with --staged_shared_lora.')
     parser.add_argument('--lora_rank', default=8, type=int, help='Rank of each LoRA expert delta.')
     parser.add_argument('--lora_alpha', default=16.0, type=float, help='LoRA scaling alpha; effective scale is alpha / rank.')
     parser.add_argument('--lora_dropout', default=0.0, type=float, help='Dropout applied before the LoRA expert delta.')
     parser.add_argument('--freeze_expert_base', type=str2bool, default=True, help='Freeze the base projection in LoRA experts and train only low-rank deltas.')
+    parser.add_argument('--staged_shared_lora', action='store_true', help='Stage 1 trains only the shared FFN path; Stage 2 freezes it and trains router plus residual LoRA experts.')
+    parser.add_argument('--staged_shared_lora_warmup_epochs', default=8, type=int, help='Number of initial epochs used for shared-FFN pretraining before residual LoRA routing.')
+    parser.add_argument('--expert_orth_coef', default=0.0, type=float, help='Coefficient for routed expert diversity/orthogonality loss. Default 0 keeps old FuseMoE behavior.')
     parser.add_argument('--use_instruction_router', action='store_true', help='Use a task instruction embedding to condition the MoE router.')
     parser.add_argument('--router_instruction', default=None, type=str, help='Clinical/task instruction text used when --use_instruction_router is enabled. If unset, a default task/modality instruction is used.')
     parser.add_argument('--instruction_router_scale', default=1.0, type=float, help='Scale applied to instruction-derived router logits.')
@@ -194,6 +205,16 @@ def parse_args():
         help='How to fuse instruction into the router: logit_bias adds instruction-derived logits; input_add adds a projected instruction vector to router input; both uses both.'
     )
     parser.add_argument('--use_semantic_expert_profiles', action='store_true', help='Use fixed clinical expert profile embeddings as semantic router anchors.')
+    parser.add_argument('--use_semantic_logit_bias', action='store_true', help='Mentor-style semantic routing: add cosine profile logits as a soft bias to learned router logits.')
+    parser.add_argument('--semantic_bias_scale', default=None, type=float, help='Alias for --semantic_profile_scale when using semantic logit bias.')
+    parser.add_argument('--semantic_project_dim', default=None, type=int, help='Router-space dimension for semantic cosine projection W_sem x.')
+    parser.add_argument('--semantic_only_router', action='store_true', help='Ablation: replace learned router logits with semantic logits only.')
+    parser.add_argument(
+        '--semantic_profile_embedding_source',
+        default='biolongformer',
+        choices=['biolongformer', 'random'],
+        help='How to initialize fixed semantic expert profile embeddings.'
+    )
     parser.add_argument(
         '--semantic_profile_set',
         default='icu_organ_system',
@@ -241,22 +262,37 @@ def parse_args():
     parser.add_argument('--router_organ_supervision_layers', default='all', choices=['all', 'first'], help='MoE layers that receive weak organ-router supervision.')
     parser.add_argument('--router_organ_supervision_class_balanced', action='store_true', help='Apply inverse-frequency batch balancing to weak organ-router targets.')
     parser.add_argument('--use_missing_modality_recon', action='store_true', help='Add embedding-level missing-modality reconstruction loss from observed modality embeddings.')
+    parser.add_argument('--use_learned_missing_embeddings', action='store_true', help='Replace zero-filled missing modality representations with learned per-modality missing embeddings.')
     parser.add_argument('--missing_modality_recon_coef', default=0.1, type=float, help='Coefficient for embedding-level missing-modality reconstruction loss.')
     parser.add_argument('--missing_modality_recon_targets', default='cxr,ecg', type=str, help='Comma-separated modality targets reconstructed from the other observed modalities, e.g. cxr,ecg,text.')
     parser.add_argument('--missing_modality_recon_hidden', default=256, type=int, help='Hidden size for lightweight modality reconstruction heads.')
     parser.add_argument('--router_z_loss_coef', default=0.0, type=float, help='Coefficient for router z-loss inside the MoE auxiliary loss. Default 0 keeps old behavior.')
+    parser.add_argument('--z_loss_weight', default=None, type=float, help='Alias for --router_z_loss_coef.')
     parser.add_argument('--router_z_loss_type', default='logsumexp', choices=['logsumexp', 'squared_logits'], help='Router z-loss variant.')
     parser.add_argument('--router_entropy_coef', default=0.0, type=float, help='Coefficient for negative router entropy regularization inside the MoE auxiliary loss. Positive values encourage softer gates.')
+    parser.add_argument('--router_variance_coef', default=0.0, type=float, help='Coefficient for Advancing Expert Specialization routing variance loss. Positive values encourage routing scores to vary across samples.')
+    parser.add_argument('--router_variance_loss_weight', default=None, type=float, help='Alias for --router_variance_coef.')
+    parser.add_argument('--output_orth_coef', default=0.0, type=float, help='Coefficient for selected expert output orthogonality loss. Positive values discourage selected experts from producing overlapping outputs.')
+    parser.add_argument('--orthogonal_loss_weight', default=None, type=float, help='Alias for --output_orth_coef.')
+    parser.add_argument('--specialization_loss_mode', default='legacy', choices=['legacy', 'paper'], help='legacy keeps old MoE auxiliary scaling; paper uses alpha*Laux + beta*Lo + gamma*Lv from Advancing Expert Specialization directly.')
+    parser.add_argument('--specialization_aux_coef', default=1e-3, type=float, help='Alpha coefficient for Laux when --specialization_loss_mode paper.')
     parser.add_argument('--dense_warmup_epochs', default=0, type=int, help='Use dense all-expert routing for the first N training epochs before switching back to top-k. Default 0 keeps old behavior.')
     parser.add_argument('--router_temperature', default=1.0, type=float, help='Fixed router temperature applied to softmax/sigmoid logits when --use_temp is false. Values >1 soften routing.')
+    parser.add_argument('--router_noise_scale', default=1.0, type=float, help='Multiplier for standard noisy top-k router noise. Values below 1 reduce random exploration.')
+    parser.add_argument('--router_noise_final_scale', default=None, type=float, help='If set, linearly decay standard router noise from --router_noise_scale to this value.')
+    parser.add_argument('--router_noise_decay_epochs', default=0, type=int, help='Epochs over which standard router noise decays from initial to final scale.')
+    parser.add_argument('--router_init', default='zero', choices=['zero', 'normal', 'xavier', 'kaiming'], help='Initialization for non-XMoE router w_gate. zero keeps original FuseMoE; random modes test DeepSeek-style non-tied router starts.')
+    parser.add_argument('--router_init_std', default=0.02, type=float, help='Stddev for --router_init normal.')
     parser.add_argument('--use_xmoe_router', action='store_true', help='Use X-MOE-style low-dimensional L2-normalized hypersphere routing while keeping full features for expert inputs.')
     parser.add_argument('--xmoe_router_dim', default=128, type=int, help='Low-dimensional routing space for --use_xmoe_router.')
     parser.add_argument('--xmoe_router_init_norm', default=0.1, type=float, help='Initial/fixed norm scale for X-MOE expert embeddings before L2-normalized scoring.')
     parser.add_argument('--xmoe_noise_scale', default=1.0, type=float, help='Multiplier for X-MOE router noise stddev. Lower values reduce near-uniform random exploration.')
+    parser.add_argument('--log_expert_output_diagnostics', action='store_true', help='Print expert output similarity and routed cohort diagnostics for MoE layers.')
     parser.add_argument('--log_router_diagnostics', action='store_true', help='Write per-sample router top-k diagnostics during test evaluation.')
     parser.add_argument('--router_diagnostics_path', default=None, type=str, help='CSV path for router diagnostics. Defaults to output_dir/router_diagnostics_test.csv.')
     parser.add_argument('--router_diagnostics_layers', default='last', choices=['last', 'all'], help='Write only the last MoE layer or all MoE layers in router diagnostics CSV.')
     parser.add_argument('--router_diagnostics_max_text_chars', default=500, type=int, help='Maximum raw note characters stored per sample in router diagnostics CSV.')
+    parser.add_argument('--router_print_mode', default='verbose', choices=['verbose', 'concise', 'none'], help='Router usage print style: verbose keeps existing lines, concise prints one compact line per split, none suppresses router usage prints.')
     parser.add_argument('--lingshu_model_path', default=None, type=str, help='Path or Hugging Face id for Lingshu/Qwen-VL backbone used by the separate Lingshu pseudo-token model.')
     parser.add_argument('--lingshu_trust_remote_code', type=str2bool, default=True, help='Pass trust_remote_code to the Lingshu backbone loader.')
     parser.add_argument('--lingshu_freeze_backbone', type=str2bool, default=True, help='Freeze Lingshu backbone parameters before attaching/trainining LoRA adapters.')
@@ -274,6 +310,25 @@ def parse_args():
     parser.add_argument('--lingshu_moe_temperature', default=1.0, type=float, help='Temperature for Lingshu organ expert routing.')
 
     args = parser.parse_args()
+
+    if args.enable_shared_expert:
+        args.shared_experts = max(args.shared_experts, 1)
+
+    if args.use_semantic_logit_bias:
+        args.use_semantic_expert_profiles = True
+        args.semantic_profile_fusion = "add"
+    if args.semantic_only_router:
+        args.use_semantic_expert_profiles = True
+        args.semantic_profile_fusion = "replace"
+    if args.semantic_bias_scale is not None:
+        args.semantic_profile_scale = args.semantic_bias_scale
+
+    if args.z_loss_weight is not None:
+        args.router_z_loss_coef = args.z_loss_weight
+    if args.router_variance_loss_weight is not None:
+        args.router_variance_coef = args.router_variance_loss_weight
+    if args.orthogonal_loss_weight is not None:
+        args.output_orth_coef = args.orthogonal_loss_weight
     return args
 
 def loadBert(args,device):
