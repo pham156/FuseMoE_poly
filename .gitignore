@@ -1,5 +1,15 @@
 **/wandb/
 **/offline-run-*/
+*.md
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.ipynb
+*.keras
+*.yaml
+*.yml
+*.sbatch
 *.out
 *.err
 *.log
@@ -9,9 +19,15 @@
 *.json
 *.svg
 out/
-./data/
-./checkpoints/
-./results/
+data/
+checkpoints/
+results/
+logs/
+run_folder/
+src/scripts/jobs/
+external_repos/
+merge_example_pipeline/
+workspace_assets/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -186,3 +202,7 @@ cython_debug/
 .pypirc
 
 results/
+
+# Workspace research assets pulled locally for reference
+workspace_assets/external/FLAME_continual_learning/
+workspace_assets/pipelines/merge_example_pipeline/

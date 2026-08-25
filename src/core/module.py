@@ -9,6 +9,7 @@ from torch import nn
 from torch.nn import Parameter
 import torch.nn.functional as F
 from utils.config import MoEConfig
+from utils.util import primary_gating_function
 from core.sparse_moe import MoE
 from core.hme import HierarchicalMoE
 import sys
@@ -162,10 +163,12 @@ class multiTimeAttention(nn.Module):
 
     def forward(self, query, key, value, mask=None, dropout=0.1):
         "Compute 'Scaled Dot Product Attention'"
+        attn_device = query.device
+        value = value.to(attn_device)
         batch, seq_len, dim = value.size()
         if mask is not None:
             # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1)
+            mask = mask.unsqueeze(1).to(attn_device)
         value = value.unsqueeze(1)
         query, key = [l(x).view(x.size(0), -1, self.h, self.embed_time_k).transpose(1, 2)
                       for l, x in zip(self.linears, (query, key))]
@@ -180,8 +183,18 @@ class MultiheadAttention(nn.Module):
     See "Attention Is All You Need" for more details.
     """
 
-    def __init__(self, embed_dim, num_heads, attn_dropout=0.,
-                 bias=True, add_bias_kv=False, add_zero_attn=False):
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        attn_dropout=0.,
+        bias=True,
+        add_bias_kv=False,
+        add_zero_attn=False,
+        use_moh_attention_head_experts=False,
+        moh_head_expert_top_k=0,
+        moh_head_expert_temperature=1.0,
+    ):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -195,6 +208,13 @@ class MultiheadAttention(nn.Module):
         if bias:
             self.in_proj_bias = Parameter(torch.Tensor(3 * embed_dim))
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.use_moh_attention_head_experts = bool(use_moh_attention_head_experts)
+        self.moh_head_expert_top_k = int(moh_head_expert_top_k)
+        self.moh_head_expert_temperature = float(moh_head_expert_temperature)
+        if self.use_moh_attention_head_experts:
+            self.moh_head_gate = nn.Linear(embed_dim, num_heads, bias=True)
+        else:
+            self.moh_head_gate = None
 
         if add_bias_kv:
             self.bias_k = Parameter(torch.Tensor(1, 1, embed_dim))
@@ -209,6 +229,9 @@ class MultiheadAttention(nn.Module):
     def reset_parameters(self):
         nn.init.xavier_uniform_(self.in_proj_weight)
         nn.init.xavier_uniform_(self.out_proj.weight)
+        if self.moh_head_gate is not None:
+            nn.init.xavier_uniform_(self.moh_head_gate.weight)
+            nn.init.constant_(self.moh_head_gate.bias, 0.)
         if self.in_proj_bias is not None:
             nn.init.constant_(self.in_proj_bias, 0.)
             nn.init.constant_(self.out_proj.bias, 0.)
@@ -294,6 +317,19 @@ class MultiheadAttention(nn.Module):
 
         attn = torch.bmm(attn_weights, v)
         assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
+
+        if self.moh_head_gate is not None:
+            head_logits = self.moh_head_gate(query.mean(dim=0))
+            temperature = max(self.moh_head_expert_temperature, 1e-6)
+            head_weights = F.softmax(head_logits / temperature, dim=-1)
+            if self.moh_head_expert_top_k > 0 and self.moh_head_expert_top_k < self.num_heads:
+                top_values, top_indices = torch.topk(head_weights, k=self.moh_head_expert_top_k, dim=-1)
+                sparse_weights = torch.zeros_like(head_weights)
+                sparse_weights.scatter_(dim=-1, index=top_indices, src=top_values)
+                head_weights = sparse_weights / sparse_weights.sum(dim=-1, keepdim=True).clamp_min(1e-9)
+            attn = attn.view(bsz, self.num_heads, tgt_len, self.head_dim)
+            attn = attn * (head_weights[:, :, None, None] * self.num_heads).to(dtype=attn.dtype)
+            attn = attn.view(bsz * self.num_heads, tgt_len, self.head_dim)
 
         # embed_dim = self.num_heads * self.head_dim
         attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
@@ -494,7 +530,21 @@ class TransformerCrossEncoder(nn.Module):
         if self.normalize:
             self.layer_norm = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(num_modalities)])
 
-    def forward(self, x_in_list, modality, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
+    def forward(
+        self,
+        x_in_list,
+        modality,
+        instruction_embedding=None,
+        semantic_profile_logits=None,
+        router_organ_targets=None,
+        task_embedding=None,
+        task_name=None,
+        task_id=None,
+        modality_mask_embedding=None,
+        modality_mask_ids=None,
+        modality_mask_strings=None,
+        interaction_features=None,
+    ):
         """
         Args:
             x_in_list (list of FloatTensor): embedded input of shape `(src_len, batch, embed_dim)`
@@ -526,6 +576,13 @@ class TransformerCrossEncoder(nn.Module):
                 instruction_embedding=instruction_embedding,
                 semantic_profile_logits=semantic_profile_logits,
                 router_organ_targets=router_organ_targets,
+                task_embedding=task_embedding,
+                task_name=task_name,
+                task_id=task_id,
+                modality_mask_embedding=modality_mask_embedding,
+                modality_mask_ids=modality_mask_ids,
+                modality_mask_strings=modality_mask_strings,
+                interaction_features=interaction_features,
             ) #proj_x_txt, proj_x_ts
             if x_list is None:
                 return None, None
@@ -554,7 +611,10 @@ class TransformerCrossEncoderLayer(nn.Module):
         self.self_attns = nn.ModuleList([MultiheadAttention(
             embed_dim=self.embed_dim,
             num_heads=self.num_heads,
-            attn_dropout=attn_dropout
+            attn_dropout=attn_dropout,
+            use_moh_attention_head_experts=getattr(args, "use_moh_attention_head_experts", False),
+            moh_head_expert_top_k=getattr(args, "moh_head_expert_top_k", 0),
+            moh_head_expert_temperature=getattr(args, "moh_head_expert_temperature", 1.0),
         ) for _ in range(num_modalities)])
 
         self.post_self_attn_layer_norm = nn.ModuleList([nn.LayerNorm(self.embed_dim) for _ in range(num_modalities)])
@@ -563,13 +623,19 @@ class TransformerCrossEncoderLayer(nn.Module):
         self.cross_attn_1 = MultiheadAttention(
             embed_dim=self.embed_dim,
             num_heads=self.num_heads,
-            attn_dropout=attn_dropout
+            attn_dropout=attn_dropout,
+            use_moh_attention_head_experts=getattr(args, "use_moh_attention_head_experts", False),
+            moh_head_expert_top_k=getattr(args, "moh_head_expert_top_k", 0),
+            moh_head_expert_temperature=getattr(args, "moh_head_expert_temperature", 1.0),
         )
 
         self.cross_attn_2 = MultiheadAttention(
             embed_dim=self.embed_dim,
             num_heads=self.num_heads,
-            attn_dropout=attn_dropout
+            attn_dropout=attn_dropout,
+            use_moh_attention_head_experts=getattr(args, "use_moh_attention_head_experts", False),
+            moh_head_expert_top_k=getattr(args, "moh_head_expert_top_k", 0),
+            moh_head_expert_temperature=getattr(args, "moh_head_expert_temperature", 1.0),
         )
 
         self.post_encoder_attn_layer_norm = nn.ModuleList([nn.LayerNorm(self.embed_dim) for _ in range(num_modalities)])
@@ -608,7 +674,7 @@ class TransformerCrossEncoderLayer(nn.Module):
             top_k=args.top_k[0],
             router_type=args.router_type,
             num_modalities=args.num_modalities,
-            gating=args.gating_function[0],
+            gating=primary_gating_function(args),
             poly_power = args.poly_power,
             student_degree = args.student_degree,
             noisy_gating = args.noisy_gating,
@@ -666,13 +732,59 @@ class TransformerCrossEncoderLayer(nn.Module):
             router_noise_scale=args.router_noise_scale,
             router_noise_final_scale=args.router_noise_final_scale,
             router_noise_decay_epochs=args.router_noise_decay_epochs,
+            poly_noise_mode=args.poly_noise_mode,
             router_init=args.router_init,
             router_init_std=args.router_init_std,
+            use_dynamic_top_k=args.use_dynamic_top_k,
+            dynamic_top_k_min=args.dynamic_top_k_min,
+            dynamic_top_k_max=args.dynamic_top_k_max,
+            dynamic_top_k_confidence_threshold=args.dynamic_top_k_confidence_threshold,
+            dynamic_top_k_entropy_threshold=args.dynamic_top_k_entropy_threshold,
+            use_multihead_permod_router=args.use_multihead_permod_router,
+            multihead_router_heads=args.multihead_router_heads,
+            multihead_router_fusion=args.multihead_router_fusion,
             use_xmoe_router=args.use_xmoe_router,
             xmoe_router_dim=args.xmoe_router_dim,
             xmoe_router_init_norm=args.xmoe_router_init_norm,
             xmoe_noise_scale=args.xmoe_noise_scale,
-            log_expert_output_diagnostics=args.log_expert_output_diagnostics
+            log_expert_output_diagnostics=args.log_expert_output_diagnostics,
+            expert_init_strategy=args.expert_init_strategy,
+            expert_init_epochs=args.expert_init_epochs,
+            expert_init_soft_targets=args.expert_init_soft_targets,
+            expert_init_release_schedule=args.expert_init_release_schedule,
+            expert_init_confidence_threshold=args.expert_init_confidence_threshold,
+            expert_init_uniform_fallback=args.expert_init_uniform_fallback,
+            expert_init_skip_low_confidence=args.expert_init_skip_low_confidence,
+            use_task_condition_router=args.use_task_condition_router,
+            task_condition_stats=args.task_condition_stats,
+            task_router_dim=args.task_router_dim,
+            use_task_specific_router_heads=args.use_task_specific_router_heads,
+            use_task_condition_expert_modulation=args.use_task_condition_expert_modulation,
+            task_expert_modulation_type=args.task_expert_modulation_type,
+            use_modality_mask_condition_router=args.use_modality_mask_condition_router,
+            mask_condition_stats=args.mask_condition_stats,
+            modality_mask_router_dim=args.modality_mask_router_dim,
+            use_modality_subset_expert_priors=args.use_modality_subset_expert_priors,
+            modality_subset_prior_weight=args.modality_subset_prior_weight,
+            semantic_guidance_coef=args.semantic_guidance_coef,
+            use_interaction_router=args.use_interaction_router,
+            interaction_router_only=args.interaction_router_only,
+            interaction_feature_dim=args.interaction_feature_dim,
+            interaction_router_scale=args.interaction_router_scale,
+            use_interaction_experts=args.use_interaction_experts,
+            interaction_expert_mode=args.interaction_expert_mode,
+            use_interaction_expert_reweighting=args.use_interaction_expert_reweighting,
+            interaction_reweight_hidden=args.interaction_reweight_hidden,
+            use_mohave_group_router=args.use_mohave_group_router,
+            mohave_num_groups=args.mohave_num_groups,
+            mohave_group_router_hidden=args.mohave_group_router_hidden,
+            mohave_group_prior_weight=args.mohave_group_prior_weight,
+            mohave_group_assignments=args.mohave_group_assignments,
+            mohave_use_interaction_group=args.mohave_use_interaction_group,
+            missingness_encoder_type=args.missingness_encoder_type,
+            shared_semantic_memory_mode=args.shared_semantic_memory_mode,
+            shared_semantic_memory_slots=args.shared_semantic_memory_slots,
+            shared_semantic_memory_heads=args.shared_semantic_memory_heads,
             )
             
             self.moe = MoE(moe_config)
@@ -697,7 +809,21 @@ class TransformerCrossEncoderLayer(nn.Module):
 
             self.moe = HierarchicalMoE(moe_config)
         
-    def forward(self, x_list, modality, instruction_embedding=None, semantic_profile_logits=None, router_organ_targets=None):
+    def forward(
+        self,
+        x_list,
+        modality,
+        instruction_embedding=None,
+        semantic_profile_logits=None,
+        router_organ_targets=None,
+        task_embedding=None,
+        task_name=None,
+        task_id=None,
+        modality_mask_embedding=None,
+        modality_mask_ids=None,
+        modality_mask_strings=None,
+        interaction_features=None,
+    ):
         """
         Args:
             x (List of Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -736,6 +862,13 @@ class TransformerCrossEncoderLayer(nn.Module):
                     instruction_embedding=instruction_embedding,
                     semantic_profile_logits=semantic_profile_logits,
                     router_organ_targets=router_organ_targets,
+                    task_embedding=task_embedding,
+                    task_name=task_name,
+                    task_id=task_id,
+                    modality_mask_embedding=modality_mask_embedding,
+                    modality_mask_ids=modality_mask_ids,
+                    modality_mask_strings=modality_mask_strings,
+                    interaction_features=interaction_features,
                 )
             else:
                 moe_out, balance_loss = self.moe(x_mod_in, modalities=modality)

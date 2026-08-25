@@ -5,6 +5,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 import argparse
+from pathlib import Path
+
+FIG_DIR = Path(__file__).resolve().parents[2] / 'workspace_assets' / 'figures' / 'legacy_figs'
+FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # -------------------------
 # 1. Synthetic Data Generation
@@ -202,7 +206,7 @@ if __name__ == '__main__':
     plt.yticks(fontsize=14)
     plt.legend(fontsize=15)
     plt.title('Expert Assignment in Input Space', fontsize=20)
-    plt.savefig(f'../../figs/sample_plot_1_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'sample_plot_1_{test_rs}_{test_noise}.pdf')
 
     # Visualize the target function behavior by plotting y against x0,
     # separately for each expert.
@@ -216,7 +220,7 @@ if __name__ == '__main__':
     plt.yticks(fontsize=14)
     plt.legend(fontsize=15)
     plt.title('Target Function Values vs $x_0$ by Expert', fontsize=25)
-    plt.savefig(f'../../figs/sample_plot_2_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'sample_plot_2_{test_rs}_{test_noise}.pdf')
 
     # Convert to PyTorch tensors
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
@@ -264,7 +268,7 @@ if __name__ == '__main__':
     plt.xticks(fontsize=14)        
     plt.yticks(fontsize=14)
     plt.title("HMoE: First-Level Gating Weights", fontsize=21)
-    plt.savefig(f'../../figs/weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
 
     # Visualize Branch 1 gating weights for Expert 1
     plt.figure(figsize=(8, 6))
@@ -277,7 +281,7 @@ if __name__ == '__main__':
     plt.xticks(fontsize=14)        
     plt.yticks(fontsize=14)
     plt.title("HMoE: Branch 1 Gating Weights", fontsize=21)
-    plt.savefig(f'../../figs/branch1_weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'branch1_weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
 
     # Visualize Branch 2 gating weights for Expert 1
     plt.figure(figsize=(8, 6))
@@ -290,7 +294,7 @@ if __name__ == '__main__':
     plt.xticks(fontsize=14)        
     plt.yticks(fontsize=14)
     plt.title("HMoE: Branch 2 Gating Weights", fontsize=21)
-    plt.savefig(f'../../figs/branch2_weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'branch2_weights_{mse_diff}_{test_rs}_{test_noise}.pdf')
 
     # Optionally, compare predictions vs true targets
     plt.figure(figsize=(8, 6))
@@ -303,4 +307,4 @@ if __name__ == '__main__':
     plt.yticks(fontsize=14)
     plt.title("Comparison of Predictions", fontsize=27)
     plt.legend(fontsize=15)
-    plt.savefig(f'../../figs/pred_{mse_diff}_{test_rs}_{test_noise}.pdf')
+    plt.savefig(FIG_DIR / f'pred_{mse_diff}_{test_rs}_{test_noise}.pdf')

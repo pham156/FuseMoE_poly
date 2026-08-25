@@ -7,6 +7,8 @@ import fnmatch
 
 import shutil
 
+from utils.util import gating_descriptor, primary_gating_function
+
 
 def copy_file(dst, src=os.getcwd()):
 
@@ -59,10 +61,11 @@ def make_save_dir(args):
             else:
                 output_dir+=args.cross_method+"/"
                 if args.cross_method == 'moe':
-                    output_dir += f"{args.gating_function}/"
-                    if 'poly' in args.gating_function:
+                    moe_gating = primary_gating_function(args) or "nogate"
+                    output_dir += f"{moe_gating}/"
+                    if args.gating_function and 'poly' in args.gating_function:
                         output_dir += f"power_{args.poly_power}/"
-                    elif 'student_t' in args.gating_function:
+                    elif args.gating_function and 'student_t' in args.gating_function:
                         output_dir += f"degree_{args.student_degree}/"
                     output_dir += f"{args.router_type}/"
                     output_dir += "noisy/" if args.noisy_gating else "clean/"
@@ -77,10 +80,10 @@ def make_save_dir(args):
                         output_dir += f"disjoint_{args.disjoint_top_k}/"
 
                 if args.cross_method == 'hme':
-                    output_dir += f"{args.gating_function[0]}_{args.gating_function[1]}/"
-                    if 'poly' in args.gating_function:
+                    output_dir += f"{gating_descriptor(args)}/"
+                    if args.gating_function and 'poly' in args.gating_function:
                         output_dir += f"power_{args.poly_power}/"
-                    elif 'student_t' in args.gating_function:
+                    elif args.gating_function and 'student_t' in args.gating_function:
                         output_dir += f"degree_{args.student_degree}/"
                     output_dir += f"{args.num_of_experts[0]}_{args.num_of_experts[1]}/"
                     output_dir += f"top_{args.top_k[0]}_{args.top_k[1]}/"

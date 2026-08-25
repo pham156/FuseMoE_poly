@@ -17,6 +17,7 @@ import time
 import sys
 import logging
 import os
+import copy
 logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,6 +27,7 @@ from utils.checkpoint import *
 from utils.util import *
 from accelerate import Accelerator
 from core.interp import *
+from scripts.runtime_helpers import get_pam_dataloaders as shared_get_pam_dataloaders
 
 
 class Struct(object):
@@ -33,173 +35,7 @@ class Struct(object):
         self.__dict__.update(entries)
 
 def get_pam_dataloaders(args):
-    class PAMDataset(Dataset):
-        def __init__(self, data, seq_len):
-            self.data = data
-            self.seq_len = seq_len
-
-        def __len__(self):
-            return len(self.data)
-
-        def __getitem__(self, idx):
-            item = self.data[idx]
-            if len(item) == 3:
-                modality_list, label, subject_id = item
-                return modality_list, label, subject_id
-            modality_list, label = item
-            return modality_list, label
-    
-
-    def collate_fn(batch):
-        has_subject_ids = len(batch[0]) == 3
-        if has_subject_ids:
-            mod_lists, labels, subject_ids = zip(*batch)
-        else:
-            mod_lists, labels = zip(*batch)
-        # Stack each modality across batch
-        num_mods = len(batch[0][0])
-        mods_stacked = []
-        for i in range(num_mods):
-            mods_stacked.append(torch.stack([m[i] for m in mod_lists]))
-        labels = torch.tensor(labels)
-        if has_subject_ids:
-            return mods_stacked, labels, torch.tensor(subject_ids)
-        return mods_stacked, labels
-
-    base_path = args.file_path  # note: use file_path, not data_dir
-    
-    def load_subject_data(subject_ids, split_name):
-        merged = []
-        for subject_id in subject_ids:
-            subject_path = os.path.join(base_path, f"subject_{subject_id}.pkl")
-            if not os.path.exists(subject_path):
-                raise FileNotFoundError(
-                    f"Missing PAM subject file for {split_name}: {subject_path}. "
-                    "Re-run prepare_pam_data.py to generate per-subject files."
-                )
-            with open(subject_path, 'rb') as f:
-                subject_samples = pickle.load(f)
-                merged.extend((mods, label, subject_id) for mods, label in subject_samples)
-        return merged
-
-    def load_legacy_split(filename):
-        with open(os.path.join(base_path, filename), 'rb') as f:
-            return pickle.load(f)
-
-    def compute_modality_stats(samples):
-        stats = []
-        num_mods = len(samples[0][0])
-        for mod_idx in range(num_mods):
-            flattened = torch.cat(
-                [sample[0][mod_idx].reshape(-1, sample[0][mod_idx].shape[-1]) for sample in samples],
-                dim=0,
-            )
-            mean = flattened.mean(dim=0)
-            std = flattened.std(dim=0)
-            std = torch.where(std < 1e-6, torch.ones_like(std), std)
-            stats.append((mean, std))
-        return stats
-
-    def normalize_samples(samples, stats):
-        normalized = []
-        for sample in samples:
-            mods, label = sample[0], sample[1]
-            norm_mods = []
-            for mod, (mean, std) in zip(mods, stats):
-                norm_mods.append((mod - mean) / std)
-            if len(sample) > 2:
-                normalized.append((norm_mods, label, sample[2]))
-            else:
-                normalized.append((norm_mods, label))
-        return normalized
-
-    requested_subjects = sorted(set(args.pam_train_subjects + args.pam_val_subjects + args.pam_test_subjects))
-    existing_subjects = [
-        subject_id for subject_id in requested_subjects
-        if os.path.exists(os.path.join(base_path, f"subject_{subject_id}.pkl"))
-    ]
-    missing_subjects = [subject_id for subject_id in requested_subjects if subject_id not in existing_subjects]
-
-    modality_dims = None
-
-    if len(existing_subjects) == len(requested_subjects):
-        train_data = load_subject_data(args.pam_train_subjects, "train")
-        val_data = load_subject_data(args.pam_val_subjects, "val")
-        test_data = load_subject_data(args.pam_test_subjects, "test")
-        print(f"PAM subject splits - train: {args.pam_train_subjects}, val: {args.pam_val_subjects}, test: {args.pam_test_subjects}")
-    elif len(existing_subjects) > 0:
-        raise FileNotFoundError(
-            "Found some PAM per-subject files but not all requested ones. "
-            f"Existing subjects: {existing_subjects}. Missing subjects: {missing_subjects}. "
-            "Re-run prepare_pam_data.py so all requested subjects are generated consistently."
-        )
-    else:
-        print("Per-subject PAM files not found, falling back to legacy aggregate split files.")
-        train_data = load_legacy_split("train_all_subjects.pkl")
-        val_data = load_legacy_split("val_all_subjects.pkl")
-        test_data = load_legacy_split("test_all_subjects.pkl")
-
-    if len(train_data) == 0:
-        raise ValueError("PAM training split is empty. Check the selected train subjects and processed subject files.")
-
-    modality_dims = [sample.shape[-1] for sample in train_data[0][0]]
-    print(f"PAM modality dims inferred from processed data: {modality_dims}")
-
-    # Fit normalization only on the training split, then apply it to val/test.
-    pam_stats = compute_modality_stats(train_data)
-    train_data = normalize_samples(train_data, pam_stats)
-    val_data = normalize_samples(val_data, pam_stats)
-    test_data = normalize_samples(test_data, pam_stats)
-
-    train_dataset = PAMDataset(train_data, args.tt_max)
-    if args.train_sample_ratio < 1.0:
-        total = len(train_dataset)
-        num = int(total * args.train_sample_ratio)
-        rng = np.random.RandomState(args.seed)
-        indices = rng.choice(total, num, replace=False)
-        train_dataset = Subset(train_dataset, indices)
-
-    # Compute inverse-frequency class weights from the actual training set used.
-    if isinstance(train_dataset, Subset):
-        train_labels = [train_dataset.dataset.data[i][1] for i in train_dataset.indices]
-    else:
-        train_labels = [sample[1] for sample in train_dataset.data]
-    class_counts = np.bincount(np.array(train_labels, dtype=np.int64), minlength=args.num_labels)
-    class_counts = np.maximum(class_counts, 1)
-    inv_freq = 1.0 / class_counts
-    class_weights = inv_freq / inv_freq.sum() * len(inv_freq)
-
-    pam_loader_workers = min(4, os.cpu_count() or 1)
-    pam_loader_kwargs = {
-        "num_workers": pam_loader_workers,
-        "pin_memory": torch.cuda.is_available(),
-    }
-    if pam_loader_workers > 0:
-        pam_loader_kwargs["persistent_workers"] = True
-        pam_loader_kwargs["prefetch_factor"] = 2
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.train_batch_size,
-        shuffle=True,
-        collate_fn=collate_fn,
-        **pam_loader_kwargs,
-    )
-    val_loader = DataLoader(
-        PAMDataset(val_data, args.tt_max),
-        batch_size=args.eval_batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,
-        **pam_loader_kwargs,
-    )
-    test_loader = DataLoader(
-        PAMDataset(test_data, args.tt_max),
-        batch_size=args.eval_batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,
-        **pam_loader_kwargs,
-    )
-    return train_loader, val_loader, test_loader, class_weights, modality_dims
+    return shared_get_pam_dataloaders(args)
 
 def get_stratified_permutation(dataset, labels, rng):
     """
@@ -223,34 +59,134 @@ def get_stratified_permutation(dataset, labels, rng):
     # The list may be longer than the dataset if some classes are shorter; trim
     return perm[:len(dataset)]
 
+
+def _build_text_backbone(args, device):
+    if 'Text' not in args.modeltype:
+        return None, None
+    BioBert, _, tokenizer = loadBert(args, device)
+    return BioBert, tokenizer
+
+
+def _build_model(args, device, BioBert=None, tokenizer=None, pam_modality_dims=None):
+    if args.dataset == "mimic":
+        if args.modeltype == 'Text':
+            return TextModel(args=args, device=device, orig_d_txt=768, Biobert=BioBert)
+        if args.modeltype == 'TS':
+            return TSMixed(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, ts_seq_num=args.tt_max)
+        return MULTCrossModel(
+            args=args,
+            device=device,
+            orig_d_ts=30,
+            orig_reg_d_ts=60,
+            orig_d_txt=768,
+            ts_seq_num=args.tt_max,
+            text_seq_num=args.num_of_notes,
+            Biobert=BioBert,
+            tokenizer=tokenizer,
+        )
+
+    from core.model import FlexiModalMULTCrossModel
+    model = FlexiModalMULTCrossModel(args, device, pam_modality_dims)
+    return model
+
+
+def _save_best_checkpoint(args, model_state, best_val_score):
+    if getattr(args, "disable_run_folder_save", False) or model_state is None:
+        return None
+    payload = {
+        "network": model_state,
+        "best_val_score": best_val_score,
+        "seed": args.seed,
+        "task": args.task,
+        "modeltype": args.modeltype,
+    }
+    checkpoint_path = None
+    if args.ck_file_path is not None:
+        os.makedirs(args.ck_file_path, exist_ok=True)
+        checkpoint_path = os.path.join(args.ck_file_path, "best_model.pth.tar")
+        torch.save(payload, checkpoint_path)
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+        torch.save(payload, os.path.join(args.output_dir, "best_model.pth.tar"))
+    return checkpoint_path
+
+
+def _task_short_name(task_name):
+    if "pheno" in task_name:
+        return "pheno"
+    if "los" in task_name:
+        return "los"
+    return "ihm"
+
+
+def _task_num_labels(task_name):
+    return 25 if _task_short_name(task_name) == "pheno" else 2
+
+
+def _task_primary_metric(task_name):
+    return "macro_f1" if _task_short_name(task_name) == "pheno" else "f1"
+
+
+class RoundRobinLoader:
+    def __init__(self, loaders):
+        self.loaders = loaders
+        self.task_names = list(loaders.keys())
+        self._length = sum(len(loader) for loader in loaders.values())
+
+    def __len__(self):
+        return self._length
+
+    def __iter__(self):
+        iterators = {name: iter(loader) for name, loader in self.loaders.items()}
+        active = list(self.task_names)
+        while active:
+            next_active = []
+            for task_name in active:
+                try:
+                    batch = next(iterators[task_name])
+                except StopIteration:
+                    continue
+                if batch is None:
+                    next_active.append(task_name)
+                    continue
+                batch = list(batch)
+                metadata = batch[19] if len(batch) > 19 else {}
+                metadata = dict(metadata)
+                metadata["task_name"] = _task_short_name(task_name)
+                batch[19] = metadata
+                yield tuple(batch)
+                next_active.append(task_name)
+            active = next_active
+
+
+def _build_multitask_mimic_loaders(args, tokenizer):
+    from preprocessing.data_mimiciv import data_perpare
+
+    task_specs = [task.strip() for task in str(args.multitask_tasks).split(",") if task.strip()]
+    train_loaders = {}
+    val_loaders = {}
+    test_loaders = {}
+    for task_name in task_specs:
+        task_args = copy.deepcopy(args)
+        task_args.task = task_name
+        task_args.num_labels = _task_num_labels(task_name)
+        task_args.primary_metric = _task_primary_metric(task_name)
+        _, _, train_loaders[_task_short_name(task_name)] = data_perpare(task_args, 'train', tokenizer)
+        _, _, val_loaders[_task_short_name(task_name)] = data_perpare(task_args, 'val', tokenizer)
+        _, _, test_loaders[_task_short_name(task_name)] = data_perpare(task_args, 'test', tokenizer)
+    return RoundRobinLoader(train_loaders), val_loaders, test_loaders
+
 def main():
     args = parse_args()
+    prepare_expert_init_targets(args)
+    prepare_unimodal_teacher_targets(args)
 
     if args.dataset == "pam":
         args.modeltype = "pam"         # to distinguish in logging, but not used
         # PAMAP2 setup in this code path uses 4 modalities: chest, hand, ankle, heart_rate.
         args.num_modalities = 4
 
-    prefix = "fusemoe_new"
-
-    if args.cross_method == 'hme':
-        if 'poly' in args.gating_function:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.gating_function[1]}_{args.poly_power}_{args.router_type}_hme_exp{args.num_of_experts}_k{args.top_k}"
-        elif 'student_t' in args.gating_function:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.gating_function[1]}_{args.student_degree}_{args.router_type}_hme_exp{args.num_of_experts}_k{args.top_k}"
-        else:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.gating_function[1]}_{args.router_type}_hme_exp{args.num_of_experts}_k{args.top_k}"
-
-    elif args.cross_method == 'moe':
-        if 'poly' in args.gating_function:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.poly_power}_{args.router_type}_moe_exp{args.num_of_experts[0]}_k{args.top_k[0]}"
-        elif 'student_t' in args.gating_function:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.student_degree}_{args.router_type}_moe_exp{args.num_of_experts[0]}_k{args.top_k[0]}"
-        else:
-            run_name = f"{prefix}_{args.gating_function[0]}_{args.router_type}_moe_exp{args.num_of_experts[0]}_k{args.top_k[0]}"
-
-    noise_tag = "noise" if args.noisy_gating else "clean"
-    run_name = f"{run_name}_{noise_tag}"
+    run_name = build_run_name(args, prefix="fusemoe_new")
 
     # wandb.init(
     #     project="polymoe_test",
@@ -292,134 +228,177 @@ def main():
 
     # if args.seed==0:
     #     copy_file(args.ck_file_path+'model/', src=os.getcwd())
-    if args.mode=='train':
-        if 'Text' in args.modeltype:
-            BioBert, BioBertConfig, tokenizer = loadBert(args,device)
-        else:
-            BioBert, tokenizer = None, None
+    BioBert, tokenizer = _build_text_backbone(args, device)
+    pam_class_weights = None
+    pam_modality_dims = None
 
-        if args.use_instruction_router:
-            if BioBert is None:
-                raise ValueError("--use_instruction_router requires a modeltype that includes Text.")
-            args.router_instruction_dim = BioBert.config.hidden_size
-        else:
-            args.router_instruction_dim = None
+    if args.use_instruction_router:
+        if BioBert is None:
+            raise ValueError("--use_instruction_router requires a modeltype that includes Text.")
+        args.router_instruction_dim = BioBert.config.hidden_size
+    else:
+        args.router_instruction_dim = None
 
-        from preprocessing.data_mimiciv import data_perpare
-
-        # train_dataset, train_sampler, train_dataloader = data_perpare(args, 'train', tokenizer)
-        # val_dataset, val_sampler, val_dataloader = data_perpare(args, 'val', tokenizer)
-        # _, _, test_data_loader = data_perpare(args,'test',tokenizer)
-
+    if args.mode == 'train':
         if args.dataset == "mimic":
             from preprocessing.data_mimiciv import data_perpare, TSNote_Irg, TextTSIrgcollate_fn
-            from torch.utils.data import DataLoader, Subset
-            import numpy as np
 
-            # Create full training dataset
-            train_dataset = TSNote_Irg(args, 'train', tokenizer)
-
-            # Validation and test loaders (full)
-            _, _, val_dataloader = data_perpare(args, 'val', tokenizer)
-            _, _, test_data_loader = data_perpare(args, 'test', tokenizer)
-
-            if args.train_sample_ratio < 1.0:
-                total = len(train_dataset)
-                num_samples = int(total * args.train_sample_ratio)
-                rng = np.random.RandomState(args.seed)
-
-                if args.task in ['ihm', 'los']:
-                    # Binary tasks: stratify by label (0 or 1)
-                    labels = [train_dataset[i]['label'].item() for i in range(total)]
-                    perm = get_stratified_permutation(train_dataset, labels, rng)
-                else:
-                    # Multi‑label tasks (phenotyping): simple random permutation (nested)
-                    perm = rng.permutation(total)
-
-                indices = perm[:num_samples]
-                train_subset = Subset(train_dataset, indices)
-                train_dataloader = DataLoader(train_subset,
-                                            batch_size=args.train_batch_size,
-                                            shuffle=True,
-                                            collate_fn=TextTSIrgcollate_fn,
-                                            num_workers=0)
-                print(f"Training with {len(train_subset)} samples (ratio={args.train_sample_ratio})")
+            if args.multitask_shared_moe_trunk:
+                train_dataloader, val_dataloader, test_data_loader = _build_multitask_mimic_loaders(args, tokenizer)
             else:
-                # Full dataset
-                _, _, train_dataloader = data_perpare(args, 'train', tokenizer)
-        elif args.dataset == "pam":
+                train_dataset = TSNote_Irg(args, 'train', tokenizer)
+                _, _, val_dataloader = data_perpare(args, 'val', tokenizer)
+                _, _, test_data_loader = data_perpare(args, 'test', tokenizer)
+
+                if args.train_sample_ratio < 1.0:
+                    total = len(train_dataset)
+                    num_samples = int(total * args.train_sample_ratio)
+                    rng = np.random.RandomState(args.seed)
+
+                    if args.task in ['ihm', 'los']:
+                        labels = [train_dataset[i]['label'].item() for i in range(total)]
+                        perm = get_stratified_permutation(train_dataset, labels, rng)
+                    else:
+                        perm = rng.permutation(total)
+
+                    indices = perm[:num_samples]
+                    train_subset = Subset(train_dataset, indices)
+                    train_dataloader = DataLoader(
+                        train_subset,
+                        batch_size=args.train_batch_size,
+                        shuffle=True,
+                        collate_fn=TextTSIrgcollate_fn,
+                        num_workers=0,
+                    )
+                    print(f"Training with {len(train_subset)} samples (ratio={args.train_sample_ratio})")
+                else:
+                    _, _, train_dataloader = data_perpare(args, 'train', tokenizer)
+        else:
             train_dataloader, val_dataloader, test_data_loader, pam_class_weights, pam_modality_dims = get_pam_dataloaders(args)
 
-        
-    # if args.modeltype == 'Text':
-    #     # pure text
-    #     model= TextModel(args=args,device=device,orig_d_txt=768,Biobert=BioBert)
-    # elif args.modeltype == 'TS':
-    #     # pure time series
-    #     model= TSMixed(args=args,device=device,orig_d_ts=30,orig_reg_d_ts=60, ts_seq_num=args.tt_max)
-    # else:
-    #     # multimodal fusion
-    #     model= MULTCrossModel(args=args,device=device,orig_d_ts=30, orig_reg_d_ts=60, orig_d_txt=768,ts_seq_num=args.tt_max,text_seq_num=args.num_of_notes,Biobert=BioBert)
-    # print(device)
-    
-    if args.dataset == "mimic":
-        if args.modeltype == 'Text':
-            model = TextModel(args=args, device=device, orig_d_txt=768, Biobert=BioBert)
-        elif args.modeltype == 'TS':
-            model = TSMixed(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, ts_seq_num=args.tt_max)
-        else:
-            model = MULTCrossModel(args=args, device=device, orig_d_ts=30, orig_reg_d_ts=60, orig_d_txt=768,
-                                ts_seq_num=args.tt_max, text_seq_num=args.num_of_notes, Biobert=BioBert,
-                                tokenizer=tokenizer)
-    elif args.dataset == "pam":
-        modality_dims = pam_modality_dims
-        # Ensure cross_method is set (from args)
-        from core.model import FlexiModalMULTCrossModel
-        model = FlexiModalMULTCrossModel(args, device, modality_dims)
-        if args.mode == "train":
+        model = _build_model(args, device, BioBert=BioBert, tokenizer=tokenizer, pam_modality_dims=pam_modality_dims)
+        if args.dataset == "pam":
             weight_tensor = torch.tensor(pam_class_weights, dtype=torch.float32, device=device)
             model.loss_fct = nn.CrossEntropyLoss(weight=weight_tensor)
 
-    if args.modeltype in ['TS', 'TS_MOE']:
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)
-    elif args.modeltype=='TS_CXR':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)
-    elif 'Text' in args.modeltype:
-        optimizer= torch.optim.Adam([
+        if args.modeltype in ['TS', 'TS_MOE', 'TS_CXR', 'pam']:
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)
+        elif 'Text' in args.modeltype:
+            optimizer = torch.optim.Adam([
                 {'params': [p for n, p in model.named_parameters() if 'bert' not in n]},
                 {'params': [p for n, p in model.named_parameters() if 'bert' in n], 'lr': args.txt_learning_rate}
             ], lr=args.ts_learning_rate)
-    elif args.modeltype == "pam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.ts_learning_rate)
+        else:
+            raise ValueError("Unknown modeltype in optimizer.")
+
+        if args.multitask_shared_moe_trunk and args.dataset == "mimic":
+            model, optimizer = accelerator.prepare(model, optimizer)
+        else:
+            model, optimizer, train_dataloader, val_dataloader, test_data_loader = accelerator.prepare(
+                model, optimizer, train_dataloader, val_dataloader, test_data_loader
+            )
+
+        best_model_state, best_val_score = trainer_irg(
+            model=model,
+            args=args,
+            accelerator=accelerator,
+            train_dataloader=train_dataloader,
+            dev_dataloader=val_dataloader,
+            test_data_loader=test_data_loader,
+            device=device,
+            optimizer=optimizer,
+            writer=writer,
+            dataset=args.dataset,
+        )
+        print(f"Best validation ({args.primary_metric}): {best_val_score}")
+        if best_model_state is None:
+            raise RuntimeError("Training completed without a best model state.")
+        accelerator.unwrap_model(model).load_state_dict(best_model_state)
+        checkpoint_path = _save_best_checkpoint(args, best_model_state, best_val_score)
+        if checkpoint_path is not None:
+            print(f"Saved best checkpoint to: {checkpoint_path}")
+
+        if getattr(args, "use_r2t2_rerouting", False):
+            if args.multitask_shared_moe_trunk and isinstance(val_dataloader, dict):
+                raise RuntimeError("R2T2 rerouting is currently implemented for single-task runs only.")
+            print("\n===== BUILDING R2T2 VALIDATION REFERENCE BANK =====")
+            build_r2t2_adaptor(
+                args=args,
+                device=device,
+                val_dataloader=val_dataloader,
+                model=model,
+                dataset=args.dataset,
+            )
+            print("===============================================\n")
+
+        print("\n===== FINAL TEST RESULTS =====")
+        if args.multitask_shared_moe_trunk and isinstance(test_data_loader, dict):
+            for task_name, task_loader in test_data_loader.items():
+                task_args = copy.deepcopy(args)
+                task_args.task = task_name
+                task_args.num_labels = _task_num_labels(task_name)
+                test_val = evaluate_irg(
+                    args=task_args,
+                    device=device,
+                    data_loader=task_loader,
+                    model=model,
+                    mode="test",
+                    dataset=args.dataset
+                )
+                print(f"[{task_name}]")
+                for k, v in test_val.items():
+                    print(f"{k}: {v}")
+        else:
+            test_val = evaluate_irg(
+                args=args,
+                device=device,
+                data_loader=test_data_loader,
+                model=model,
+                mode="test",
+                dataset=args.dataset
+            )
+            for k, v in test_val.items():
+                print(f"{k}: {v}")
+        print("================================\n")
+    elif args.mode == "eval":
+        if getattr(args, "use_r2t2_rerouting", False):
+            raise RuntimeError(
+                "R2T2 eval-only replay is not implemented. Use --use_r2t2_rerouting during training "
+                "so the validation bank and test rerouting run from the selected in-memory model."
+            )
+        if not args.checkpoint_path:
+            raise ValueError("--checkpoint_path is required in --mode eval.")
+        if args.dataset == "mimic":
+            from preprocessing.data_mimiciv import data_perpare
+            _, _, eval_dataloader = data_perpare(args, args.eval_split, tokenizer)
+        else:
+            train_dataloader, val_dataloader, test_data_loader, pam_class_weights, pam_modality_dims = get_pam_dataloaders(args)
+            if args.eval_split == "train":
+                eval_dataloader = train_dataloader
+            elif args.eval_split == "val":
+                eval_dataloader = val_dataloader
+            else:
+                eval_dataloader = test_data_loader
+
+        model = _build_model(args, device, BioBert=BioBert, tokenizer=tokenizer, pam_modality_dims=pam_modality_dims)
+        checkpoint = torch.load(args.checkpoint_path, map_location=device)
+        state_dict = checkpoint.get("network", checkpoint)
+        model.load_state_dict(state_dict)
+        model, eval_dataloader = accelerator.prepare(model, eval_dataloader)
+        eval_vals = evaluate_irg(
+            args=args,
+            device=device,
+            data_loader=eval_dataloader,
+            model=model,
+            mode="test" if args.eval_split == "test" else "val",
+            dataset=args.dataset,
+        )
+        print(f"\n===== EVAL RESULTS ({args.eval_split}) =====")
+        for k, v in eval_vals.items():
+            print(f"{k}: {v}")
+        print("=================================\n")
     else:
-        raise ValueError("Unknown modeltype in optimizer.")
-
-    model, optimizer, train_dataloader,val_dataloader,test_data_loader = \
-    accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, test_data_loader)
-
-    # total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # print(f"Model has {total_params:,} trainable parameters")
-    
-    best_model_state, best_val_score = trainer_irg(model=model,args=args,accelerator=accelerator,train_dataloader=train_dataloader,\
-        dev_dataloader=val_dataloader, test_data_loader=test_data_loader, device=device,\
-        optimizer=optimizer,writer=writer, dataset=args.dataset)
-    # eval_test(args,model,test_data_loader, device)
-    print(f"Best validation ({args.primary_metric}): {best_val_score}")
-    model.load_state_dict(best_model_state)
-
-    test_val = evaluate_irg(
-        args=args,
-        device=device,
-        data_loader=test_data_loader,
-        model=model,
-        mode="test",
-        dataset=args.dataset
-    )
-    print("\n===== FINAL TEST RESULTS =====")
-    for k, v in test_val.items():
-        # wandb.log({f"test/{k}": v})
-        print(f"{k}: {v}")
-    print("================================\n")
+        raise ValueError(f"Unsupported mode: {args.mode}")
 
         
 

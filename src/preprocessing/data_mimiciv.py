@@ -113,6 +113,8 @@ class TSNote_Irg(Dataset):
             self.notes_order=args.notes_order
         else:
             self.notes_order="Last"
+        self.task = args.task
+        self.task_name = "pheno" if "pheno" in self.task else ("los" if "los" in self.task else "ihm")
 
         if args.ratio_notes_order!=None:
             self.order_sample=np.random.binomial(1, args.ratio_notes_order,len(self.data))
@@ -262,26 +264,26 @@ class TSNote_Irg(Dataset):
         ts_mask=torch.tensor(ts_mask,dtype=torch.long)
         ts_tt=torch.tensor([t/self.tt_max for t in ts_tt],dtype=torch.float)
         if self.modeltype == 'TS_CXR':
-            return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label, 'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask}
+            return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label, 'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'task_name': self.task_name}
         elif self.modeltype in ['TS', 'TS_MOE']:
-            return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label}
+            return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "label": label, 'task_name': self.task_name}
         elif self.modeltype == 'Text_MOE':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label":label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
-            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts}
+            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts, 'task_name': self.task_name}
         elif self.modeltype == 'TS_Text':
             return {'idx': idx,'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label":label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
-            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts}
+            'note_time':text_time_to_end, 'text_time_mask': text_time_mask, 'note_texts': note_texts, 'task_name': self.task_name}
         elif self.modeltype == 'TS_CXR_Text':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label": label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
             'note_time': text_time_to_end, 'text_time_mask': text_time_mask, 'text_missing': data_detail['text_missing'],
              'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'cxr_missing': data_detail['cxr_missing'], 'ecg_missing': data_detail['ecg_missing'],
-             'note_texts': note_texts}
+             'note_texts': note_texts, 'task_name': self.task_name}
         elif self.modeltype == 'TS_CXR_Text_ECG':
             return {'idx': idx, 'ts': ts, 'ts_mask': ts_mask, 'ts_tt': ts_tt, 'reg_ts': reg_ts, "input_ids": text_token, "label": label, "attention_mask": atten_mask, "text_embeddings": text_emb, \
             'note_time': text_time_to_end, 'text_time_mask': text_time_mask, 'text_missing': data_detail['text_missing'],
              'cxr_feats': cxr_feats, 'cxr_time': cxr_time_to_end, 'cxr_time_mask': cxr_time_mask, 'cxr_missing': data_detail['cxr_missing'],
              'ecg_feats': ecg_feats, 'ecg_time': ecg_time_to_end, 'ecg_time_mask': ecg_time_mask, 'ecg_missing': data_detail['ecg_missing'],
-             'note_texts': note_texts}    
+             'note_texts': note_texts, 'task_name': self.task_name}    
 
     def __len__(self):
         return len(self.data)
@@ -382,6 +384,7 @@ def TextTSIrgcollate_fn(batch):
     metadata = {
         "sample_ids": [example.get("idx", "") for example in batch],
         "note_texts": [example.get("note_texts", []) for example in batch],
+        "task_name": batch[0].get("task_name", None),
     }
 
     return ts_input_sequences, ts_mask_sequences, ts_tt, reg_ts_input, \
